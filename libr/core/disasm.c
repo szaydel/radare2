@@ -2601,7 +2601,7 @@ static int ds_disassemble(RDisasmState *ds, ut8 *buf, int len) {
 	r_asm_op_fini (&ds->asmop);
 	ret = r_asm_disassemble (core->rasm, &ds->asmop, buf, len);
 	if (ds->asmop.size < 1) {
-		ds->asmop.size = minopsz;
+		ds->asmop.size = 1; // minopsz;
 	}
 	// handle meta here //
 	if (!ds->asm_meta) {
