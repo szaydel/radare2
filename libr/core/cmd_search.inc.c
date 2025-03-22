@@ -376,7 +376,7 @@ static void cmd_search_bin(RCore *core, RInterval itv) {
 					.loadaddr = 0,
 					.sz = 4096,
 					.xtr_idx = 0,
-					.rawstr = core->bin->rawstr,
+					.rawstr = core->bin->options.rawstr,
 					.fd = fd,
 				};
 				r_bin_open_io (core->bin, &opt);
@@ -2375,7 +2375,7 @@ static bool check_false_positive(const char *s) {
 	}
 	bool ok = true;
 	int rep = 0;
-	char s0 = *s;
+	ut8 s0 = *s;
 	if (!isalpha (s0) && !isdigit (s0)) {
 		return false;
 	}

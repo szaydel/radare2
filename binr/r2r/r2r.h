@@ -82,6 +82,11 @@ typedef struct r2r_asm_test_t {
 	size_t bytes_size;
 } R2RAsmTest;
 
+typedef struct r2r_test_to_skip_t {
+	const char *dir;
+	const char *name;
+} R2RTestToSkip;
+
 typedef struct r2r_json_test_t {
 	ut64 line;
 	char *cmd;
@@ -155,6 +160,7 @@ typedef struct r2r_test_result_info_t {
 	R2RTestResult result;
 	bool timeout;
 	bool run_failed; // something went seriously wrong (e.g. r2 not found)
+	bool run_skipped; // run was skipped due to e.g. R2R_SHALLOW
 	ut64 time_elapsed;
 	union {
 		R2RProcessOutput *proc_out; // for test->type == R2R_TEST_TYPE_CMD, R2R_TEST_TYPE_JSON or R2R_TEST_TYPE_FUZZ

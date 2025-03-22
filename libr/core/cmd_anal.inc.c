@@ -79,6 +79,7 @@ static RCoreHelpMessage help_msg_aae = {
 static RCoreHelpMessage help_msg_aav = {
 	"Usage:", "aav", "[sat] # find values referencing a specific section or map",
 	"aav", "", "find absolute reference values (see aav0)",
+	"aavq", "", "same as aav, but in quiet mode",
 	"aav0", "", "find absolute reference values (accept maps at address zero)",
 	"aavr", "[0]", "find relative reference values (address + 4 byte signed int)",
 	NULL
@@ -1113,7 +1114,7 @@ static RCoreHelpMessage help_msg_ax = {
 	"axd", " addr [at]", "add data ref",
 	"axF", " [flg-glob]", "find data/code references of flags",
 	"axf", "[?] [addr]", "find data/code references from this address",
-	"axff", "[*jq] [addr]", "find data/code references from this function",
+	"axff", "[*jqQ] [addr]", "find data/code references from this function",
 	"axg", "[*j] [addr]", "show xrefs graph to reach current function",
 	// "axg*", " [addr]", "show xrefs graph to given address, use .axg*;aggv",
 	// "axgj", " [addr]", "show xrefs graph to reach current function in json format",
@@ -1678,7 +1679,7 @@ static void cmd_afvx(RCore *core, RAnalFunction *fcn, bool json) {
 	}
 }
 
-static int cmd_an(RCore *core, const char *name, int mode) {
+static int cmd_an2(RCore *core, const char *name, int mode) {
 	int ret = 0;
 	RAnalOp op = {0};
 	PJ *pj = NULL;
@@ -1691,6 +1692,7 @@ static int cmd_an(RCore *core, const char *name, int mode) {
 		goto failure;
 	}
 	RAnalVar *var = r_anal_get_used_function_var (core->anal, op.addr);
+	// RFlagItem *fi = r_flag_get_at (core->flags, at, false);
 
 	ut64 tgt_addr = op.jump != UT64_MAX? op.jump: op.ptr;
 	if (var) {
@@ -1733,33 +1735,59 @@ static int cmd_an(RCore *core, const char *name, int mode) {
 		} else if (f) {
 			if (name) {
 				ret = r_flag_rename (core->flags, f, name)? 0: -1;
-			} else if (mode == '*') {
-				r_cons_printf ("f %s=0x%" PFMT64x "\n", r_str_get (name), core->addr);
-			} else if (mode == 'j') {
-				pj_o (pj);
-				pj_ks (pj, "name", f->name);
-				if (f->realname) {
-					pj_ks (pj, "realname", f->realname);
-				}
-				pj_ks (pj, "type", "flag");
-				pj_kn (pj, "offset", tgt_addr);
-				pj_end (pj);
 			} else {
-				r_cons_println (f->name);
+				char *hname = NULL;
+				if (!name) {
+					hname = r_core_cmd_strf (core, "fd");
+					r_str_trim (hname);
+					if (R_STR_ISEMPTY (hname)) {
+						R_LOG_ERROR ("Cannot find a name for this address");
+						goto failure;
+					}
+					name = hname;
+				}
+				if (mode == '*') {
+					r_cons_printf ("f %s=0x%" PFMT64x "\n", name, core->addr);
+				} else if (mode == 'j') {
+					pj_o (pj);
+					pj_ks (pj, "name", f->name);
+					if (f->realname) {
+						pj_ks (pj, "realname", f->realname);
+					}
+					pj_ks (pj, "type", "flag");
+					pj_kn (pj, "offset", tgt_addr);
+					pj_end (pj);
+				} else {
+					r_cons_println (f->name);
+				}
+				free (hname);
 			}
 		} else {
 			if (name) {
 				ret = r_flag_set (core->flags, name, tgt_addr, 1)? 0: -1;
-			} else if (mode == '*') {
-				r_cons_printf ("f %s=0x%" PFMT64x "\n", r_str_get (name), core->addr);
-			} else if (mode == 'j') {
-				pj_o (pj);
-				pj_ks (pj, "name", r_str_get (name));
-				pj_ks (pj, "type", "address");
-				pj_kn (pj, "offset", tgt_addr);
-				pj_end (pj);
 			} else {
-				r_cons_printf ("0x%" PFMT64x "\n", tgt_addr);
+				char *hname = NULL;
+				if (!name) {
+					hname = r_core_cmd_strf (core, "fd");
+					r_str_trim (hname);
+					if (R_STR_ISEMPTY (hname)) {
+						R_LOG_ERROR ("Cannot find a name for this address");
+						goto failure;
+					}
+					name = hname;
+				}
+				if (mode == '*') {
+					r_cons_printf ("f %s=0x%" PFMT64x "\n", name, core->addr);
+				} else if (mode == 'j') {
+					pj_o (pj);
+					pj_ks (pj, "name", name);
+					pj_ks (pj, "type", "address");
+					pj_kn (pj, "offset", tgt_addr);
+					pj_end (pj);
+				} else {
+					r_cons_printf ("0x%" PFMT64x "\n", tgt_addr);
+				}
+				free (hname);
 			}
 		}
 	}
@@ -2093,7 +2121,7 @@ static int var_cmd(RCore *core, const char *str) {
 			r_anal_function_delete_vars_by_kind (fcn, type);
 		} else {
 			RAnalVar *var = NULL;
-			if (isdigit (str[2])) {
+			if (isdigit (str[2] & 0xff)) {
 				var = r_anal_function_get_var (fcn, type, (int)r_num_math (core->num, str + 1));
 			} else {
 				char *name = r_str_trim_dup (str + 2);
@@ -6911,7 +6939,7 @@ void cmd_anal_reg(RCore *core, const char *str) {
 				for (j = i; str[++j] && str[j] != ','; );
 				if (j - i + 1 <= sizeof name) {
 					r_str_ncpy (name, str + i, j - i + 1);
-					if (isdigit (name[0])) { // e.g. ar 32
+					if (isdigit (name[0] & 0xff)) { // e.g. ar 32
 						__anal_reg_list (core, R_REG_TYPE_GPR, atoi (name), '\0');
 					} else if (showreg (core, name) > 0) {
 						// e.g. ar rax
@@ -7671,7 +7699,7 @@ static bool myregwrite(REsil *esil, const char *name, ut64 *val) {
 		r_list_pop (stats->regread);
 		R_FREE (oldregread)
 	}
-	if (!isdigit (*name)) {
+	if (!isdigit (*name & 0xff)) {
 		if (!contains (stats->regs, name)) {
 			r_list_push (stats->regs, strdup (name));
 		}
@@ -7689,7 +7717,7 @@ static bool myregwrite(REsil *esil, const char *name, ut64 *val) {
 
 static bool myregread(REsil *esil, const char *name, ut64 *val, int *len) {
 	AeaStats *stats = esil->user;
-	if (!isdigit (*name)) {
+	if (!isdigit (*name & 0xff)) {
 		if (!contains (stats->inputregs, name)) {
 			if (!contains (stats->regwrite, name)) {
 				r_list_push (stats->inputregs, strdup (name));
@@ -9632,7 +9660,7 @@ static void cmd_anal_opcode(RCore *core, const char *input) {
 				free (ops);
 			}
 		} else if (input[1] == 'l' || input[1] == '=' || input[1] == ' ' || input[1] == 'j') {
-			if (input[1] == ' ' && !isdigit (input[2])) {
+			if (input[1] == ' ' && !isdigit (input[2] & 0xff)) {
 				r_cons_printf ("%d\n", r_asm_mnemonics_byname (core->rasm, input + 2));
 			} else {
 				// "aoml"
@@ -10121,7 +10149,7 @@ static void cmd_anal_syscall(RCore *core, const char *input) {
 	case 'c': // "asc"
 		if (input[1] == 'a') {
 			if (input[2] == ' ') {
-				if (!isalpha ((ut8)input[3]) && (n = r_num_math (core->num, input + 3)) >= 0 ) {
+				if (!isalpha (input[3] & 0xff) && (n = r_num_math (core->num, input + 3)) >= 0 ) {
 					si = r_syscall_get (core->anal->syscall, n, -1);
 					if (si) {
 						r_cons_printf (".equ SYS_%s %s\n", si->name, syscallNumber (snstr, n));
@@ -10146,7 +10174,7 @@ static void cmd_anal_syscall(RCore *core, const char *input) {
 			}
 		} else {
 			if (input[1] == ' ') {
-				if (!isalpha ((ut8)input[2]) && (n = r_num_math (core->num, input + 2)) >= 0) {
+				if (!isalpha (input[2] & 0xff) && (n = r_num_math (core->num, input + 2)) >= 0) {
 					si = r_syscall_get (core->anal->syscall, n, -1);
 					if (si) {
 						r_cons_printf ("#define SYS_%s %s\n", si->name, syscallNumber (snstr, n));
@@ -10914,13 +10942,20 @@ static bool cmd_anal_refs(RCore *core, const char *input) {
 	case 'f':
 		if (input[1] == 'f') { // "axff"
 			bool quiet = false;
+			bool quieter = false;
 			bool r2mode = false;
 			RAnalFunction * fcn = r_anal_get_fcn_in (core->anal, addr, 0);
 			PJ *pj = NULL;
 			if (input[2] == '*') { // "axff*"
 				r2mode = true;
+			} else if (input[2] == 'Q') { // "axffQ"
+				quiet = true;
+				quieter = true;
 			} else if (input[2] == 'q') { // "axffq"
 				quiet = true;
+				if (input[3] == 'q') { // "axffqq"
+					quieter = true;
+				}
 			} else if (input[2] == 'j') { // "axffj"
 				// start a new JSON object
 				pj = r_core_pj_new (core);
@@ -10944,7 +10979,11 @@ static bool cmd_anal_refs(RCore *core, const char *input) {
 							r_cons_printf ("ax%c 0x%08"PFMT64x" 0x%08"PFMT64x"\n",
 								refi->type, refi->addr, refi->at);
 						} else if (quiet) {
-							r_cons_printf ("%s\n", name);
+							if (quieter) {
+								r_cons_printf ("0x%08"PFMT64x"\n", refi->addr);
+							} else {
+								r_cons_printf ("%s\n", name);
+							}
 						} else {
 							r_cons_printf ("%s 0x%08"PFMT64x" 0x%08"PFMT64x" %s\n",
 								r_anal_ref_type_tostring (refi->type), refi->at, refi->addr, name);
@@ -11227,7 +11266,7 @@ static void cmd_anal_hint(RCore *core, const char *input) {
 			r_anal_hint_set_immbase (core->anal, addr? addr: core->addr, 0);
 			break;
 		}
-		if (isdigit ((ut8)input[1])) {
+		if (isdigit (input[1] & 0xff)) {
 			r_anal_hint_set_nword (core->anal, core->addr, input[1] - '0');
 			input++;
 		}
@@ -15676,6 +15715,56 @@ static void cmd_ap(RCore *core, const char *input) {
 	}
 }
 
+static void cmd_an(RCore *core, const char *input) {
+	if (input[1] == 'o') {
+		cmd_ano (core, input);
+	} else if (input[1] == 'f') {
+		const bool list = input[2] == 'l';
+		RAnalFunction *fcn = r_anal_get_fcn_in (core->anal, core->addr, -1);
+		if (fcn) {
+			if (list) {
+				free (r_core_anal_fcn_autoname (core, fcn, 'l'));
+			} else {
+				char *n = r_core_anal_fcn_autoname (core, fcn, 0);
+				r_cons_println (n? n: fcn->name);
+				free (n);
+			}
+		} else {
+			R_LOG_WARN ("cant find a function here");
+		}
+	} else {
+		const char *name = "";
+		int mode = 0;
+		switch (input[1]) {
+		case '?':
+			r_core_cmd_help (core, help_msg_an);
+			mode = -1;
+			break;
+		case 'j':
+		case '*':
+			mode = input[1];
+			input++;
+			break;
+		}
+		if (mode >= 0) {
+			if (input[1] == ' ') {
+				name = input + 1;
+				while (name[0] == ' ') {
+					name++;
+				}
+				char *end = strchr (name, ' ');
+				if (end) {
+					*end = '\0';
+				}
+			}
+			if (R_STR_ISEMPTY (name)) {
+				name = NULL;
+			}
+			cmd_an2 (core, name, mode);
+		}
+	}
+}
+
 static int cmd_anal(void *data, const char *input) {
 	const char *r;
 	RCore *core = (RCore *)data;
@@ -15765,53 +15854,7 @@ static int cmd_anal(void *data, const char *input) {
 		}
 		break;
 	case 'n': // "an"
-		if (input[1] == 'o') {
-			cmd_ano (core, input);
-		} else if (input[1] == 'f') {
-			const bool list = input[2] == 'l';
-			RAnalFunction *fcn = r_anal_get_fcn_in (core->anal, core->addr, -1);
-			if (fcn) {
-				if (list) {
-					free (r_core_anal_fcn_autoname (core, fcn, 'l'));
-				} else {
-					char *n = r_core_anal_fcn_autoname (core, fcn, 0);
-					r_cons_printf ("%s\n", n? n: fcn->name);
-					free (n);
-				}
-			} else {
-				R_LOG_WARN ("cant find function here");
-			}
-		} else {
-			const char *name = "";
-			int mode = 0;
-			switch (input[1]) {
-			case '?':
-				r_core_cmd_help (core, help_msg_an);
-				mode = -1;
-				break;
-			case 'j':
-			case '*':
-				mode = input[1];
-				input++;
-				break;
-			}
-			if (mode >= 0) {
-				if (input[1] == ' ') {
-					name = input + 1;
-					while (name[0] == ' ') {
-						name++;
-					}
-					char *end = strchr (name, ' ');
-					if (end) {
-						*end = '\0';
-					}
-				}
-				if (R_STR_ISEMPTY (name)) {
-					name = NULL;
-				}
-				cmd_an (core, name, mode);
-			}
-		}
+		cmd_an (core, input);
 		break;
 	case 'g': // "ag"
 		cmd_anal_graph (core, input + 1);

@@ -2446,7 +2446,14 @@ char* Elf_(get_arch)(ELFOBJ *eo) {
 		return strdup ("x86");
 	case EM_NONE:
 		return strdup ("null");
-	default: return strdup ("Unknown or unsupported arch");
+	case EM_TI_C6000:
+	case EM_TI_C2000:
+	case EM_TI_C5500:
+		return strdup ("tms320");
+	default:
+		// should be NULL instead
+		R_LOG_ERROR ("Unknown e_machine 0x%02x", eo->ehdr.e_machine);
+		return strdup ("unknown"); // Unknown or unsupported arch");
 	}
 }
 
@@ -3778,7 +3785,7 @@ static bool _add_sections_from_phdr(RBinFile *bf, ELFOBJ *eo, bool *found_load) 
 	ut64 num = Elf_(get_phnum) (eo);
 	r_vector_reserve (&eo->cached_sections, r_vector_length (&eo->cached_sections) + num);
 
-	const int limit = bf->rbin->limit;
+	const int limit = bf->rbin->options.limit;
 	if (limit > 0 && num > limit) {
 		R_LOG_WARN ("eo.limit reached for sections");
 		num = limit;

@@ -47,7 +47,8 @@ static void interact_diffchar(R2RTestResultInfo *result);
 R_IPI const char *getarchos(void) {
 	if (R_SYS_BITS_CHECK (R_SYS_BITS, 64)) {
 		return R_SYS_OS "-"R_SYS_ARCH "_64";
-	} else if (R_SYS_BITS_CHECK (R_SYS_BITS, 32)) {
+	}
+	if (R_SYS_BITS_CHECK (R_SYS_BITS, 32)) {
 		return R_SYS_OS "-"R_SYS_ARCH "_32";
 	}
 	return R_SYS_OS "-"R_SYS_ARCH;
@@ -747,6 +748,12 @@ static void test_result_to_json(PJ *pj, R2RTestResultInfo *result) {
 	pj_o (pj);
 	pj_k (pj, "type");
 	R2RTest *test = result->test;
+	if (!test) {
+		R_LOG_ERROR ("result->test shouldn't be null");
+		pj_s (pj, "error");
+		pj_end (pj);
+		return;
+	}
 	switch (test->type) {
 	case R2R_TEST_TYPE_CMD:
 		pj_s (pj, "cmd");
@@ -816,6 +823,7 @@ static RThreadFunctionRet worker_th(RThread *th) {
 		} else {
 			result = R_NEW0 (R2RTestResultInfo);
 			result->result = R2R_TEST_RESULT_OK;
+			result->run_skipped = true;
 		}
 		r_th_lock_enter (state->lock);
 		r_pvector_push (&state->results, result);
@@ -1005,7 +1013,7 @@ static void print_new_results(R2RState *state, ut64 prev_completed) {
 	ut64 i;
 	for (i = prev_completed; i < completed; i++) {
 		R2RTestResultInfo *result = r_pvector_at (&state->results, (size_t)i);
-		if (state->test_results) {
+		if (state->test_results && !result->run_skipped) {
 			test_result_to_json (state->test_results, result);
 		}
 		if (!state->verbose && (result->result == R2R_TEST_RESULT_OK || result->result == R2R_TEST_RESULT_FIXED || result->result == R2R_TEST_RESULT_BROKEN)) {
