@@ -9,6 +9,11 @@
 
 R_LIB_VERSION (r_core);
 R_VEC_TYPE (RVecAnalRef, RAnalRef);
+// R2_600
+#if !R2_USE_NEW_ABI
+R_IPI int Gload_index = 0;
+#endif
+
 
 static ut64 letter_divs[R_CORE_ASMQJMPS_LEN_LETTERS - 1] = {
 	R_CORE_ASMQJMPS_LETTERS * R_CORE_ASMQJMPS_LETTERS * R_CORE_ASMQJMPS_LETTERS * R_CORE_ASMQJMPS_LETTERS,
@@ -63,7 +68,7 @@ static void r_core_debug_breakpoint_hit(RCore *core, RBreakpointItem *bpi) {
 	const bool bpcmd_exists = R_STR_ISNOTEMPTY (bpi->data);
 	const bool may_output = (cmdbp_exists || bpcmd_exists);
 	if (may_output) {
-		r_cons_push ();
+		r_kons_push (core->cons);
 	}
 	if (cmdbp_exists) {
 		r_core_cmd0 (core, cmdbp);
@@ -72,8 +77,8 @@ static void r_core_debug_breakpoint_hit(RCore *core, RBreakpointItem *bpi) {
 		r_core_cmd0 (core, bpi->data);
 	}
 	if (may_output) {
-		r_cons_flush ();
-		r_cons_pop ();
+		r_kons_flush (core->cons);
+		r_kons_pop (core->cons);
 	}
 }
 
@@ -81,7 +86,7 @@ static void r_core_debug_syscall_hit(RCore *core) {
 	const char *cmdhit = r_config_get (core->config, "cmd.onsyscall");
 	if (R_STR_ISNOTEMPTY (cmdhit)) {
 		r_core_cmd0 (core, cmdhit);
-		r_cons_flush ();
+		r_kons_flush (core->cons);
 	}
 }
 
@@ -307,25 +312,25 @@ static bool __syncDebugMaps(RCore *core) {
 
 R_API char *r_core_cmd_call_str_at(RCore *core, ut64 addr, const char *cmd) {
 	R_RETURN_VAL_IF_FAIL (core && core->cons, NULL);
-	r_cons_push ();
+	r_kons_push (core->cons);
 	core->cons->context->noflush = true;
 	core->cons->context->cmd_str_depth++;
 	if (cmd && r_core_cmd_call_at (core, addr, cmd) == -1) {
 		//eprintf ("Invalid command: %s\n", cmd);
 		if (--core->cons->context->cmd_str_depth == 0) {
 			core->cons->context->noflush = false;
-			r_cons_flush ();
+			r_kons_flush (core->cons);
 		}
-		r_cons_pop ();
+		r_kons_pop (core->cons);
 		return NULL;
 	}
 	if (--core->cons->context->cmd_str_depth == 0) {
 		core->cons->context->noflush = false;
 	}
-	r_cons_filter ();
+	r_kons_filter (core->cons);
 	const char *static_str = r_cons_get_buffer ();
 	char *retstr = strdup (r_str_get (static_str));
-	r_cons_pop ();
+	r_kons_pop (core->cons);
 	r_cons_echo (NULL);
 	return retstr;
 }
@@ -718,12 +723,13 @@ static void autocomplete_alias(RLineCompletion *completion, RCmd *cmd, const cha
 	const int match_count = c.num_completions;
 	if (match_count == 1) {
 		/* If only 1 possible completion, use it */
+		RCons *cons = r_cons_singleton ();
 		const char *k = c.valid_completions[0];
 		const RCmdAliasVal *val = c.valid_completion_vals[0];
 
 		char *v = r_cmd_alias_val_strdup ((RCmdAliasVal *)val);
-		r_cons_printf ("$%s=%s%s\n", k, val->is_data? "$": "", v);
-		r_cons_flush ();
+		r_kons_printf (cons, "$%s=%s%s\n", k, val->is_data? "$": "", v);
+		r_kons_flush (cons);
 
 		char *completed_alias = r_str_newf ("$%s", k);
 		r_line_completion_push (completion, completed_alias);
@@ -1358,7 +1364,7 @@ static bool find_autocomplete(RCore *core, RLineCompletion *completion, RLineBuf
 			}
 			if (desc && desc->help_msg) {
 				r_core_cmd_help (core, desc->help_msg);
-				r_cons_flush ();
+				r_kons_flush (core->cons);
 				return true;
 			}
 			// fallback to command listing
@@ -1631,14 +1637,16 @@ R_API void r_core_autocomplete(RCore * R_NULLABLE core, RLineCompletion *complet
 }
 
 static int autocomplete(RLineCompletion *completion, RLineBuffer *buf, RLinePromptType prompt_type, void *user) {
-	RCore *core = user;
+	RCore *core = (RCore *)user;
+	if (core == NULL) {
+		R_LOG_WARN ("core->cons->line->user is nul, but should be equals to core");
+	}
 	r_core_autocomplete (core, completion, buf, prompt_type);
 	return true;
 }
 
-R_API int r_core_fgets(char *buf, int len) {
+R_API int r_core_fgets(RCons *cons, char *buf, int len) {
 	R_RETURN_VAL_IF_FAIL (buf, -1);
-	RCons *cons = r_cons_singleton (); // XXX no globals pls
 	RLine *rli = cons->line;
 #if R2_590
 	cons->maxlength = len; /// R2_590
@@ -2089,6 +2097,7 @@ R_API const char *colorforop(RCore *core, ut64 addr) {
 }
 
 R_API const char *r_core_anal_optype_colorfor(RCore *core, ut64 addr, ut8 ch, bool verbose) {
+	R_RETURN_VAL_IF_FAIL (core, NULL);
 	if (!(core->print->flags & R_PRINT_FLAGS_COLOR)) {
 		return NULL;
 	}
@@ -2096,7 +2105,7 @@ R_API const char *r_core_anal_optype_colorfor(RCore *core, ut64 addr, ut8 ch, bo
 		// if function in place check optype for given offset
 		return colorforop (core, addr);
 	}
-	if (!r_config_get_i (core->config, "scr.color")) {
+	if (r_config_get_i (core->config, "scr.color") == 0) {
 		return NULL;
 	}
 	if (!verbose) {
@@ -2106,7 +2115,7 @@ R_API const char *r_core_anal_optype_colorfor(RCore *core, ut64 addr, ut8 ch, bo
 			const char *ficolor = r_flag_item_set_color (core->flags, fi, NULL);
 			if (ficolor) {
 				free (const_color);
-				const_color = r_cons_pal_parse (ficolor, NULL);
+				const_color = r_cons_pal_parse (core->cons, ficolor, NULL);
 				return const_color;
 			}
 		}
@@ -2136,27 +2145,24 @@ static void r_core_setenv(RCore *core) {
 	char *h = r_xdg_datadir ("prefix/bin"); // support \\ on windows :?
 	char *n = r_str_newf ("%s%s%s", h, R_SYS_ENVSEP, e);
 	r_sys_setenv ("PATH", n);
-	{
-		char *cpstr = r_str_newf ("%p", core);
-		r_sys_setenv ("R2CORE", cpstr);
-		free (cpstr);
-	}
+	r_strf_var (coreptr, 64, "%p", core);
+	r_sys_setenv ("R2CORE", coreptr);
 	free (n);
 	free (h);
 	free (e);
 }
 
 static int mywrite(const ut8 *buf, int len) {
-	return r_cons_write ((const char *)buf, len);
+	return r_kons_write (r_cons_singleton (), (const char *)buf, len);
 }
 
 static bool exists_var(RPrint *print, ut64 func_addr, char *str) {
 	RAnal *anal = ((RCore*)(print->user))->anal;
 	RAnalFunction *fcn = r_anal_get_function_at (anal, func_addr);
-	if (!fcn) {
-		return false;
+	if (fcn) {
+		return !!r_anal_function_get_var_byname (fcn, str);
 	}
-	return !!r_anal_function_get_var_byname (fcn, str);
+	return false;
 }
 
 static bool r_core_anal_log(struct r_anal_t *anal, const char *msg) {
@@ -2399,17 +2405,6 @@ R_API RFlagItem *r_core_flag_get_by_spaces(RFlag *f, bool prionospace, ut64 off)
 		NULL);
 }
 
-#if R2__WINDOWS__
-// XXX move to rcons?
-static int win_eprintf(const char *format, ...) {
-	va_list ap;
-	va_start (ap, format);
-	r_cons_win_vhprintf (r_cons_singleton (), STD_ERROR_HANDLE, false, format, ap);
-	va_end (ap);
-	return 0;
-}
-#endif
-
 static void ev_iowrite_cb(REvent *ev, int type, void *user, void *data) {
 	RCore *core = user;
 	REventIOWrite *iow = data;
@@ -2481,7 +2476,7 @@ static void cmdusr1(int p) {
 	const char *cmd = r_config_get (Gcore->config, "cmd.usr1");
 	if (R_STR_ISNOTEMPTY (cmd)) {
 		r_core_cmd0 (Gcore, cmd);
-		r_cons_flush ();
+		r_kons_flush (r_cons_singleton ());
 	}
 }
 
@@ -2489,7 +2484,7 @@ static void cmdusr2(int p) {
 	const char *cmd = r_config_get (Gcore->config, "cmd.usr2");
 	if (R_STR_ISNOTEMPTY (cmd)) {
 		r_core_cmd0 (Gcore, cmd);
-		r_cons_flush ();
+		r_kons_flush (r_cons_singleton ());
 	}
 }
 #endif
@@ -2571,10 +2566,6 @@ R_API bool r_core_init(RCore *core) {
 	core->print->offname = r_core_print_offname;
 	core->print->offsize = r_core_print_offsize;
 	core->print->cb_printf = r_cons_printf;
-#if R2__WINDOWS__
-	// XXX R2_590 deprecate this callback? we have the rlog apis
-	core->print->cb_eprintf = win_eprintf;
-#endif
 	// core->print->cb_color = r_cons_rainbow_get; // NEVER CALLED
 	core->print->write = mywrite;
 	core->print->exists_var = exists_var;
@@ -2616,6 +2607,7 @@ R_API bool r_core_init(RCore *core) {
 	core->theme = strdup ("default");
 	/* initialize libraries */
 	core->cons = r_cons_new ();
+	core->cons->line->user = core;
 #if 0
 	if (true || core->cons->refcnt == 1) {
 		core->cons = r_cons_singleton ();
@@ -2702,7 +2694,8 @@ R_API bool r_core_init(RCore *core) {
 	core->fs = r_fs_new ();
 	core->flags = r_flag_new ();
 	core->flags->cb_printf = r_cons_printf;
-	core->graph = r_agraph_new (r_cons_canvas_new (1, 1));
+	int flags = r_cons_canvas_flags (core->cons);
+	core->graph = r_agraph_new (r_cons_canvas_new (1, 1, flags));
 	core->graph->need_reload_nodes = false;
 	core->asmqjmps_size = R_CORE_ASMQJMPS_NUM;
 	if (sizeof (ut64) * core->asmqjmps_size < core->asmqjmps_size) {
@@ -2793,13 +2786,14 @@ R_API void __cons_cb_fkey(RCore *core, int fkey) {
 	snprintf (buf, sizeof (buf), "key.f%d", fkey);
 	const char *v = r_config_get (core->config, buf);
 	if (v && *v) {
-		r_cons_printf ("%s\n", v);
+		r_kons_println (core->cons, v);
 		r_core_cmd0 (core, v);
-		r_cons_flush ();
+		r_kons_flush (core->cons);
 	}
 }
 
 R_API void r_core_bind_cons(RCore *core) {
+	R_RETURN_IF_FAIL (core);
 	core->cons->num = core->num;
 	core->cons->cb_fkey = (RConsFunctionKey)__cons_cb_fkey;
 	core->cons->cb_editor = (RConsEditorCallback)r_core_editor;
@@ -2811,9 +2805,7 @@ R_API void r_core_bind_cons(RCore *core) {
 }
 
 R_API void r_core_fini(RCore *c) {
-	if (!c) {
-		return;
-	}
+	R_RETURN_IF_FAIL (c);
 	if (c->chan) {
 		r_th_channel_free (c->chan);
 	}
@@ -2877,7 +2869,6 @@ R_API void r_core_fini(RCore *c) {
 	should probably need to add a r_config_free_payload callback */
 	r_cons_free (c->cons);
 	c->cons = NULL;
-	//r_cons_singleton ()->teefile = NULL; // HACK
 	free (c->theme);
 	free (c->themepath);
 	r_search_free (c->search);
@@ -2894,21 +2885,16 @@ R_API void r_core_fini(RCore *c) {
 	free (c->times);
 }
 
-R_API void r_core_free(RCore *c) {
+R_API void r_core_free(RCore * R_NULLABLE c) {
 	if (c) {
 		r_core_fini (c);
 		free (c);
 	}
 }
 
-// R2_600
-#if !R2_USE_NEW_ABI
-R_IPI int Gload_index = 0;
-#endif
-
 R_API bool r_core_prompt_loop(RCore *r) {
 #if !R2_USE_NEW_ABI
-	Gload_index = r_cons_singleton()->line->history.index;
+	Gload_index = r->cons->line->history.index;
 #endif
 	int ret = 0;
 	do {
@@ -2978,7 +2964,7 @@ static void chop_prompt(RCore *core, const char *filename, char *tmp, size_t max
 
 static void set_prompt(RCore *core) {
 	if (core->incomment) {
-		r_line_set_prompt (core->cons, " * ");
+		r_line_set_prompt (core->cons->line, " * ");
 		return;
 	}
 	char tmp[128];
@@ -3052,7 +3038,7 @@ static void set_prompt(RCore *core) {
 	} else {
 		prompt = r_str_newf ("%s%s[%s%s]> %s", filename, BEGIN, remote, tmp, END);
 	}
-	r_line_set_prompt (core->cons, r_str_get (prompt));
+	r_line_set_prompt (core->cons->line, r_str_get (prompt));
 
 	R_FREE (filename);
 	R_FREE (prompt);
@@ -3534,7 +3520,7 @@ reaccept:
 		r_socket_free (c);
 	}
 out_of_function:
-	r_cons_break_pop ();
+	r_kons_break_pop (core->cons);
 	return false;
 }
 
@@ -3614,7 +3600,7 @@ R_API char *r_core_editor(const RCore *core, const char *file, const char *str) 
 	close (fd);
 
 	if (name && (R_STR_ISEMPTY (editor) || !strcmp (editor, "-"))) {
-		RCons *cons = r_cons_singleton ();
+		RCons *cons = core->cons;
 		void *tmp = cons->cb_editor;
 		cons->cb_editor = NULL;
 		r_cons_editor (cons, name, NULL);
@@ -3737,9 +3723,6 @@ R_API RCoreAutocomplete *r_core_autocomplete_add(RCoreAutocomplete *parent, cons
 		return NULL;
 	}
 	RCoreAutocomplete *autocmpl = R_NEW0 (RCoreAutocomplete);
-	if (!autocmpl) {
-		return NULL;
-	}
 	// TODO: use rlist or so
 	RCoreAutocomplete **updated = realloc (parent->subcmds, (parent->n_subcmds + 1) * sizeof (RCoreAutocomplete*));
 	if (!updated) {
