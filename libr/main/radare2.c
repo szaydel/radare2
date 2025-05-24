@@ -692,9 +692,9 @@ R_API int r_main_radare2(int argc, const char **argv) {
 	mr.envprofile = r_run_get_environ_profile (env);
 
 	if (r_sys_getenv_asbool ("R2_DEBUG")) {
-		r_log_set_level (R_LOG_LEVEL_DEBUG);
+		r_log_set_level (R_LOG_LEVEL_LAST - 1);
 		char *sysdbg = r_sys_getenv ("R2_DEBUG_TOOL");
-		char *fmt = (sysdbg && *sysdbg)
+		char *fmt = R_STR_ISNOTEMPTY (sysdbg)
 			? strdup (sysdbg)
 #if __APPLE__
 			: strdup ("lldb -p");
@@ -1248,7 +1248,7 @@ R_API int r_main_radare2(int argc, const char **argv) {
 
 	char *history_file = r_xdg_cachedir ("history");
 	if (history_file) {
-		r_line_hist_load (history_file);
+		r_line_hist_load (r->cons->line, history_file);
 		free (history_file);
 	}
 
@@ -1958,7 +1958,7 @@ R_API int r_main_radare2(int argc, const char **argv) {
 	if (mustSaveHistory (r->config)) {
 		char *history_file = r_xdg_cachedir ("history");
 		if (history_file) {
-			r_line_hist_save (history_file);
+			r_line_hist_save (r->cons->line, history_file);
 			free (history_file);
 		}
 	}

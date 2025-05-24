@@ -4,11 +4,11 @@
 
 static RCoreHelpMessage help_msg_w = {
 	"Usage:", "w[x] [str] [<file] [<<EOF] [@addr]", "",
-	"w", "[1248][+-][n]", "increment/decrement byte,word..",
 	"w ", "foobar", "write string 'foobar'",
 	"w+", "string", "write string and seek to its null terminator",
 	"w0", " [len]", "write 'len' bytes with value 0x00",
 	"w6", "[d|e|x] base64/string/hex", "write base64 [d]ecoded or [e]ncoded string",
+	"w8", " [hexpairs]", "alias for wx",
 	"wa", "[?] push ebp", "write opcode, separated by ';' (use '\"' around the command)",
 	"waf", " f.asm", "assemble file and write bytes",
 	"waF", " f.asm", "assemble file and write bytes and show 'wx' op with hexpair bytes of assembled code",
@@ -22,6 +22,7 @@ static RCoreHelpMessage help_msg_w = {
 	"wf", "[fs] -|file", "write contents of file at current offset",
 	"wg", "[et] [http://host/file]", "download file from http server and save it to disk (wget)",
 	"wh", " r2", "whereis/which shell command",
+	"wi", "[1248][+-][n]", "increment/decrement byte,word..",
 	"wm", " f0ff", "set binary mask hexpair to be used as cyclic write mask",
 	"wo", "[?] hex", "write in block with operation. 'wo?' fmi",
 	"wp", "[?] -|file", "apply radare patch file. See wp? fmi",
@@ -31,7 +32,7 @@ static RCoreHelpMessage help_msg_w = {
 	"ww", " foobar", "write wide string 'f\\x00o\\x00o\\x00b\\x00a\\x00r\\x00'",
 	"wx", "[?][fs] 9090", "write two intel nops (from wxfile or wxseek)",
 	"wX", " 1b2c3d", "fill current block with cyclic hexpairs",
-	"wv", "[?] eip+34", "write 32-64 bit value honoring cfg.bigendian",
+	"wv", "[?] [expr]", "write [1,2,4,8]-byte size using cfg.bigendian",
 	"wu", " [unified-diff-patch]", "see 'cu'",
 	"wz", " string", "write zero terminated string (like w + \\x00)",
 	NULL
@@ -189,10 +190,10 @@ static RCoreHelpMessage help_msg_wv = {
 	"wv2", " 234", "write unsigned short (2 bytes) with this number",
 	"wv4", " 1 2 3", "write N space-separated dword (4 bytes)",
 	"wv8", " 234", "write qword (8 bytes) with this number",
-	"wvp", " 934", "write 4 or 8 byte pointer, depending on asm.bits",
-	"wvf", " 3.14", "write float value (4 bytes)",
 	"wvF", " 3.14", "write double value (8 bytes)",
+	"wvf", " 3.14", "write float value (4 bytes)",
 	"wvG", " 3.14", "write long double value (10/16 bytes)",
+	"wvp", " 934", "write 4 or 8 byte pointer, depending on asm.bits",
 	"Supported sizes are:", "1, 2, 4, 8", "",
 	NULL
 };
@@ -2516,11 +2517,24 @@ static int cmd_write(void *data, const char *input) {
 	case '0': // "w0"
 		cmd_w0 (data, input + 1);
 		break;
-	case '1': // "w1"
-	case '2': // "w2"
-	case '4': // "w4"
-	case '8': // "w8"
-		w_incdec_handler (data, input + 1, *input - '0');
+	case '8':
+		cmd_wx (core, input + 1);
+		break;
+	case 'i':
+		switch (input[1]) {
+		case '1': // "w1"
+		case '2': // "w2"
+		case '4': // "w4"
+		case '8': // "w8"
+			w_incdec_handler (data, input + 2, input[1] - '0');
+			break;
+		case '?':
+			r_core_cmd_help_contains (core, help_msg_w, "wi");
+			break;
+		default:
+			r_core_return_invalid_command (core, "wi", input[1]);
+			break;
+		}
 		break;
 	case '6': // "w6"
 		cmd_w6 (core, input + 1);
