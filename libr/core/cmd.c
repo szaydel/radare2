@@ -2546,7 +2546,7 @@ static int cmd_kuery(void *data, const char *input) {
 		const size_t buf_size = 1024;
 		char *buf = malloc (1024);
 		while (buf) {
-			r_line_set_prompt (core->cons, p);
+			r_line_set_prompt (core->cons->line, p);
 			*buf = 0;
 			if (r_cons_fgets (core->cons, buf, buf_size, 0, NULL) < 1) {
 				break;
@@ -3004,7 +3004,7 @@ static int cmd_panels(void *data, const char *input) {
 			RPanel *pan = getpanel (core->panels, core->panels->curnode);
 #undef getpanel
 			if (pan) {
-				char *r = r_cons_pal_parse (r_str_trim_head_ro (input + 2), NULL);
+				char *r = r_cons_pal_parse (core->cons, r_str_trim_head_ro (input + 2), NULL);
 				if (r) {
 					free (pan->model->bgcolor);
 					pan->model->bgcolor = r_str_newf (Color_RESET"%s", r);
@@ -3470,7 +3470,7 @@ static int cmd_system(void *data, const char *input) {
 		r_line_hist_free (core->cons->line);
 		if (input[1]) {
 			char *history_file = r_xdg_cachedir ("history");
-			r_line_hist_save (history_file);
+			r_line_hist_save (core->cons->line, history_file);
 			free (history_file);
 		}
 		break;
@@ -3488,7 +3488,7 @@ static int cmd_system(void *data, const char *input) {
 		{
 			char *history_file = r_xdg_cachedir ("history");
 			R_LOG_INFO ("History saved to %s", history_file);
-			r_line_hist_save (history_file);
+			r_line_hist_save (core->cons->line, history_file);
 			free (history_file);
 		}
 		break;
@@ -3525,12 +3525,12 @@ core->cons->context->noflush = false;
 					}
 					free (out);
 			} else {
-				r_line_hist_list (false);
+				r_line_hist_list (core->cons->line, false);
 			}
 		}
 		break;
 	case '\0':
-		r_line_hist_list (true);
+		r_line_hist_list (core->cons->line, true);
 		break;
 	case '?': // "!?"
 		cmd_help_exclamation (core);
@@ -3549,7 +3549,7 @@ core->cons->context->noflush = false;
 	default:
 		n = atoi (input);
 		if (*input == '0' || n > 0) {
-			const char *cmd = r_line_hist_get (n);
+			const char *cmd = r_line_hist_get (core->cons->line, n);
 			if (cmd) {
 				r_core_cmd0 (core, cmd);
 			}
@@ -3559,7 +3559,7 @@ core->cons->context->noflush = false;
 				void *bed = r_cons_sleep_begin ();
 				ret = r_sys_cmd (cmd);
 				if (ret != 0) {
-					r_cons_singleton()->context->was_breaked = true;
+					core->cons->context->was_breaked = true;
 				}
 				r_cons_sleep_end (bed);
 				r_core_sysenv_end (core, input);
@@ -3745,7 +3745,7 @@ R_API int r_core_cmd_pipe(RCore *core, char *radare_cmd, char *shell_cmd) {
 		str = r_core_cmd_str (core, radare_cmd);
 		r_sys_cmd_str_full (shell_cmd + 1, str, -1, &out, &olen, NULL);
 		free (str);
-		r_cons_write (out, olen);
+		r_kons_write (core->cons, out, olen);
 		free (out);
 		ret = 0;
 	}
@@ -3925,6 +3925,7 @@ static int handle_command_call(RCore *core, const char *cmd) {
 }
 
 static int r_core_cmd_subst(RCore *core, char *cmd) {
+	RCons *cons = core->cons;
 	// PANCAKE eprintf ("subst(%s) (%s)\n", cmd, core->cons->context->grep.strings);
 	ut64 rep = strtoull (cmd, NULL, 10);
 	int ret = 0, orep;
@@ -3955,7 +3956,7 @@ static int r_core_cmd_subst(RCore *core, char *cmd) {
 				*http = 0;
 			}
 		}
-		r_cons_printf ("HTTP/1.0 %d %s\r\n%s"
+		r_kons_printf (cons, "HTTP/1.0 %d %s\r\n%s"
 				"Connection: close\r\nContent-Length: %d\r\n\r\n",
 				200, "OK", "", -1);
 		return r_core_cmd0 (core, cmd);
@@ -4025,8 +4026,8 @@ static int r_core_cmd_subst(RCore *core, char *cmd) {
 		goto beach;
 	}
 	if ((st64)rep > 1 && rep > INTERACTIVE_MAX_REP) {
-		if (r_cons_is_interactive ()) {
-			if (!r_cons_yesno ('n', "Are you sure to repeat this %"PFMT64d" times? (y/N)", rep)) {
+		if (r_kons_is_interactive (cons)) {
+			if (!r_kons_yesno (cons, 'n', "Are you sure to repeat this %"PFMT64d" times? (y/N)", rep)) {
 				goto beach;
 			}
 		}
@@ -4044,7 +4045,7 @@ static int r_core_cmd_subst(RCore *core, char *cmd) {
 	const bool ocur_enabled = core->print && core->print->cur_enabled;
 	R_CRITICAL_LEAVE (core);
 	while (rep-- > 0 && *cmd) {
-		if (r_cons_was_breaked ()) {
+		if (r_kons_was_breaked (cons)) {
 			break;
 		}
 		if (core->print) {
@@ -4083,7 +4084,7 @@ static int r_core_cmd_subst(RCore *core, char *cmd) {
 			r_kons_flush (core->cons);
 		}
 		if (R_STR_ISNOTEMPTY (cr) && orep > 1) {
-			// XXX: do not flush here, we need r_cons_push () and r_cons_pop()
+			// XXX: do not flush here, we need r_kons_push () and r_kons_pop()
 			r_kons_flush (core->cons);
 			// XXX: we must import register flags in C
 			(void)r_core_cmd0 (core, ".dr*");
@@ -4448,9 +4449,10 @@ static int r_core_cmd_subst_i(RCore *core, char *cmd, char *colon, bool *tmpseek
 				} else if (ptr[1] == 'H') { // "|H"
 					scr_html = r_config_get_b (core->config, "scr.html");
 					r_config_set_b (core->config, "scr.html", true);
-					r_cons_context ()->tmp_html = true;
-					r_cons_context ()->is_html = true;
-					r_cons_context ()->was_html = scr_html;
+					RConsContext *c = core->cons->context;
+					c->tmp_html = true;
+					c->is_html = true;
+					c->was_html = scr_html;
 					return r_core_cmd0 (core, cmd);
 				} else if (!ptr[1] || !strcmp (ptr + 1, "T")) { // "|T"
 					scr_html = r_config_get_b (core->config, "scr.html");
@@ -6054,7 +6056,7 @@ R_API int r_core_cmd_foreach(RCore *core, const char *cmd, char *each) {
 				r_list_foreach (core->anal->fcns, iter, fcn) {
 					r_core_seek (core, fcn->addr, true);
 #if 0
-					r_cons_push ();
+					r_kons_push ();
 					r_core_cmd (core, cmd, 0);
 					char *buf = (char *)r_cons_get_buffer ();
 					if (buf) {
@@ -6277,13 +6279,13 @@ R_API int r_core_cmd_foreach(RCore *core, const char *cmd, char *each) {
 					char *buf = NULL;
 					const char *tmp = NULL;
 					r_core_seek (core, flag->addr, true);
-					r_cons_push ();
+					r_kons_push (core->cons);
 					r_core_cmd (core, cmd, 0);
 					tmp = r_cons_get_buffer ();
 					buf = tmp? strdup (tmp): NULL;
-					r_cons_pop ();
+					r_kons_pop (core->cons);
 					if (buf) {
-						r_cons_print (buf);
+						r_kons_print (core->cons, buf);
 						free (buf);
 					}
 					if (!foreach_newline (core)) {
@@ -6307,7 +6309,7 @@ R_API int r_core_cmd_foreach(RCore *core, const char *cmd, char *each) {
 	return true;
 out_finish:
 	free (ostr);
-	r_cons_break_pop ();
+	r_kons_break_pop (core->cons);
 	return false;
 }
 
@@ -6360,7 +6362,7 @@ R_API int r_core_cmd(RCore *core, const char *cstr, bool log) {
 	}
 	if (ret != -1) {
 		if (log) {
-			r_line_hist_add (cstr);
+			r_line_hist_add (core->cons->line, cstr);
 		}
 		return ret;
 	}
@@ -6399,7 +6401,7 @@ R_API int r_core_cmd(RCore *core, const char *cstr, bool log) {
 				}
 			}
 			if (log) {
-				r_line_hist_add (cstr);
+				r_line_hist_add (core->cons->line, cstr);
 			}
 			goto beach; // false
 		}
@@ -6428,7 +6430,7 @@ R_API int r_core_cmd(RCore *core, const char *cstr, bool log) {
 	}
 	r_str_cpy (cmd, cstr);
 	if (log) {
-		r_line_hist_add (cstr);
+		r_line_hist_add (core->cons->line, cstr);
 	}
 	ret = run_cmd_depth (core, cmd);
 	free (cmd);

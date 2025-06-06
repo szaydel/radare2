@@ -457,6 +457,7 @@ static RThreadFunctionRet sigchld_th(RThread *th) {
 			R2RSubprocess *proc = pid_to_proc (pid);
 			if (proc) {
 				r_th_lock_enter (proc->lock);
+#if !__wasi__
 				if (WIFSIGNALED (wstat)) {
 					const int signal_number = WTERMSIG (wstat);
 					R_LOG_ERROR ("Child signal %d", signal_number);
@@ -473,6 +474,9 @@ static RThreadFunctionRet sigchld_th(RThread *th) {
 				} else {
 					proc->ret = -1;
 				}
+#else
+				proc->ret = -1;
+#endif
 				int ret = write (proc->killpipe[1], "", 1);
 				r_th_lock_leave (proc->lock);
 				if (ret != 1) {
@@ -500,22 +504,22 @@ R_API bool r2r_subprocess_init(void) {
 	}
 	sigchld_thread = r_th_new (sigchld_th, NULL, 0);
 	if (!r_th_start (sigchld_thread)) {
-		if (sigchld_thread) {
-			r_th_free (sigchld_thread);
-			sigchld_thread = NULL;
-		}
-		close (sigchld_pipe [0]);
-		close (sigchld_pipe [1]);
-		r_th_lock_free (subprocs_mutex);
-		return false;
+		goto error;
 	}
 	if (r_sys_signal (SIGCHLD, handle_sigchld) < 0) {
-		close (sigchld_pipe [0]);
-		close (sigchld_pipe [1]);
-		r_th_lock_free (subprocs_mutex);
-		return false;
+		goto error;
 	}
 	return true;
+
+error:
+	if (sigchld_thread) {
+		r_th_free (sigchld_thread);
+		sigchld_thread = NULL;
+	}
+	close (sigchld_pipe [0]);
+	close (sigchld_pipe [1]);
+	r_th_lock_free (subprocs_mutex);
+	return false;
 }
 
 R_API void r2r_subprocess_fini(void) {

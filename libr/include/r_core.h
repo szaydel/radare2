@@ -27,7 +27,7 @@
 #include <r_util.h>
 #include <rvc.h>
 #include <r_util/r_print.h>
-#include <r_crypto.h>
+#include <r_muta.h>
 #include <r_bind.h>
 #include <r_codemeta.h>
 
@@ -345,7 +345,7 @@ struct r_core_t {
 	bool vmode; // is r2 in visual or panels mode?
 	/* files */
 	RCons *cons;
-	RCrypto *crypto;
+	RMuta *muta;
 	RIO *io;
 	RNum *num;
 	ut64 rc; // command's return code .. related to num->value;
@@ -518,7 +518,7 @@ R_API ut64 r_core_pava(RCore *core, ut64 addr);
 R_API int r_core_cmd(RCore *core, const char *cmd, bool log);
 R_API int r_core_cmd_task_sync(RCore *core, const char *cmd, bool log);
 R_API char *r_core_editor(const RCore *core, const char *file, const char *str);
-R_API int r_core_fgets(char *buf, int len);
+R_API int r_core_fgets(RCons *cons, char *buf, int len);
 R_API RFlagItem *r_core_flag_get_by_spaces(RFlag *f, bool prionospace, ut64 off);
 R_API int r_core_cmdf(RCore *core, const char *fmt, ...) R_PRINTF_CHECK(2, 3);
 R_API int r_core_cmdf_at(RCore *core, ut64 addr, const char *fmt, ...) R_PRINTF_CHECK(3, 4);
@@ -722,7 +722,7 @@ R_API ut64 r_core_anal_fcn_list_size(RCore *core);
 R_API void r_core_anal_fcn_labels(RCore *core, RAnalFunction *fcn, int rad);
 R_API int r_core_anal_fcn_clean(RCore *core, ut64 addr);
 R_API int r_core_print_bb_custom(RCore *core, RAnalFunction *fcn);
-R_API int r_core_anal_graph(RCore *core, ut64 addr, int opts);
+R_API bool r_core_anal_graph(RCore *core, ut64 addr, int opts);
 R_API int r_core_anal_graph_fcn(RCore *core, char *input, int opts);
 R_API RList* r_core_anal_graph_to(RCore *core, ut64 addr, int n);
 R_API int r_core_anal_ref_list(RCore *core, int rad);

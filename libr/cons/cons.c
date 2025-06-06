@@ -7,20 +7,17 @@
 
 R_LIB_VERSION (r_cons);
 
-// static R_TH_LOCAL RConsContext r_cons_context_default = {0};
-
 static RCons s_cons_global = {0};
-static R_TH_LOCAL RCons s_cons_thread = {0};
 
 static void __break_signal(int sig);
+static R_TH_LOCAL RCons *I = NULL;
 
+#include "thread.inc.c"
 #include "kons.inc.c"
-static R_TH_LOCAL RCons *I = NULL; // &s_cons_global; // NULL;
 
 static void __break_signal(int sig) {
 	r_cons_context_break (I->context); // &r_cons_context_default);
 }
-#define C (getctx ())
 
 static inline void init_cons_instance(void) {
 	return;
@@ -53,7 +50,8 @@ R_API bool r_cons_is_initialized(void) {
 
 R_API RColor r_cons_color_random(ut8 alpha) {
 	RColor rcolor = {0};
-	if (C->color_mode > COLOR_MODE_16) {
+	RConsContext *ctx = getctx ();
+	if (ctx->color_mode > COLOR_MODE_16) {
 		rcolor.r = r_num_rand (0xff);
 		rcolor.g = r_num_rand (0xff);
 		rcolor.b = r_num_rand (0xff);
@@ -77,44 +75,8 @@ R_API RColor r_cons_color_random(ut8 alpha) {
 	return rcolor;
 }
 
-R_API void r_cons_color(int fg, int r, int g, int b) {
-	int k;
-	r = R_DIM (r, 0, 255);
-	g = R_DIM (g, 0, 255);
-	b = R_DIM (b, 0, 255);
-	if (r == g && g == b) { // b&w
-		k = 232 + (int)(((r+g+b)/3)/10.3);
-	} else {
-		r = (int)(r / 42.6);
-		g = (int)(g / 42.6);
-		b = (int)(b / 42.6);
-		k = 16 + (r * 36) + (g * 6) + b;
-	}
-	r_cons_printf ("\x1b[%d;5;%dm", fg? 48: 38, k);
-}
-
 R_API void r_cons_println(const char* str) {
 	r_kons_println (I, str);
-}
-
-R_API void r_cons_printat(const char *str, int x, char y) {
-	int i, o, len;
-	int h, w = r_cons_get_size (&h);
-	int lines = 0;
-	for (o = i = len = 0; str[i]; i++, len++) {
-		if (str[i] == '\n') {
-			r_cons_gotoxy (x, y + lines);
-			int wlen = R_MIN (len, w);
-			r_cons_write (str + o, wlen);
-			o = i + 1;
-			len = 0;
-			lines++;
-		}
-	}
-	if (len > 0) {
-		r_cons_gotoxy (x, y + lines);
-		r_cons_write (str + o, len);
-	}
 }
 
 R_API void r_cons_print_justify(RCons *cons, const char *str, int j, char c) {
@@ -139,12 +101,12 @@ R_API void r_cons_print_justify(RCons *cons, const char *str, int j, char c) {
 	}
 }
 
-R_API void r_cons_print_at(const char *_str, int x, char y, int w, int h) {
+R_API void r_cons_print_at(RCons *cons, const char *_str, int x, char y, int w, int h) {
 	int i, o, len;
 	int cols = 0;
 	int rows = 0;
 	if (x < 0 || y < 0) {
-		int H, W = r_cons_get_size (&H);
+		int H, W = r_kons_get_size (cons, &H);
 		if (x < 0) {
 			x += W;
 		}
@@ -152,36 +114,39 @@ R_API void r_cons_print_at(const char *_str, int x, char y, int w, int h) {
 			y += H;
 		}
 	}
+	// TODO: what happens if w == 0 || h == 0 ?
 	char *str = r_str_ansi_crop (_str, 0, 0, w + 1, h);
-	r_cons_print (R_CONS_CURSOR_SAVE);
+	r_kons_print (cons, R_CONS_CURSOR_SAVE);
 	for (o = i = len = 0; str[i]; i++, len++) {
 		if (w < 0 || rows > w) {
 			break;
 		}
 		if (str[i] == '\n') {
-			r_cons_gotoxy (x, y + rows);
-			int ansilen = r_str_ansi_len (str + o);
+			r_kons_gotoxy (cons, x, y + rows);
+			size_t ansilen = r_str_ansi_len (str + o);
 			cols = R_MIN (w, ansilen);
 			const char *end = r_str_ansi_chrn (str + o, cols);
 			cols = end - str + o;
-			r_cons_write (str + o, R_MIN (len, cols));
+			r_kons_write (cons, str + o, R_MIN (len, cols));
 			o = i + 1;
 			len = 0;
 			rows++;
 		}
 	}
 	if (len > 1) {
-		r_cons_gotoxy (x, y + rows);
-		r_cons_write (str + o, len);
+		r_kons_gotoxy (cons, x, y + rows);
+		r_kons_write (cons, str + o, len);
 	}
-	r_cons_print (Color_RESET);
-	r_cons_print (R_CONS_CURSOR_RESTORE);
+	r_kons_print (cons, Color_RESET);
+	r_kons_print (cons, R_CONS_CURSOR_RESTORE);
 	free (str);
 }
 
+#if 0
 R_API RConsContext *r_cons_context(void) {
 	return C;
 }
+#endif
 
 R_API RCons *r_cons_global(RCons *c) {
 	if (c) {
@@ -215,7 +180,7 @@ R_API void r_cons_context_break_push(RConsContext *context, RConsBreak cb, void 
 	}
 	if (r_stack_is_empty (context->break_stack)) {
 #if R2__UNIX__
-		if (!C->unbreakable) {
+		if (!context->unbreakable) {
 			if (sig && r_cons_context_is_main ()) {
 				r_sys_signal (SIGINT, __break_signal);
 			}
@@ -250,12 +215,12 @@ R_API void r_cons_context_break_pop(RConsContext *context, bool sig) {
 		//there is not more elements in the stack
 #if R2__UNIX__ && !__wasi__
 		if (sig && r_cons_context_is_main ()) {
-			if (!C->unbreakable) {
+			if (!context->unbreakable) {
 				r_sys_signal (SIGINT, SIG_IGN);
 			}
 		}
 #endif
-		C->was_breaked = C->breaked;
+		context->was_breaked = context->breaked;
 		context->breaked = false;
 	}
 #endif
@@ -278,11 +243,23 @@ R_API bool r_cons_default_context_is_interactive(void) {
 	return I->context->is_interactive;
 }
 
+R_API bool r_kons_was_breaked(RCons *cons) {
+#if WANT_DEBUGSTUFF
+	const bool res = r_kons_is_breaked (cons) || cons->context->was_breaked;
+	cons->context->breaked = false;
+	cons->context->was_breaked = false;
+	return res;
+#else
+	return false;
+#endif
+}
+
 R_API bool r_cons_was_breaked(void) {
 #if WANT_DEBUGSTUFF
-	const bool res = r_cons_is_breaked () || C->was_breaked;
-	C->breaked = false;
-	C->was_breaked = false;
+	RConsContext *ctx = r_cons_singleton ()->context;
+	const bool res = r_cons_is_breaked () || ctx->was_breaked;
+	ctx->breaked = false;
+	ctx->was_breaked = false;
 	return res;
 #else
 	return false;
@@ -305,6 +282,23 @@ R_API void r_cons_line(int x, int y, int x2, int y2, int ch) {
 		}
 	}
 }
+
+R_API void r_cons_color(int fg, int r, int g, int b) {
+	int k;
+	r = R_DIM (r, 0, 255);
+	g = R_DIM (g, 0, 255);
+	b = R_DIM (b, 0, 255);
+	if (r == g && g == b) { // b&w
+		k = 232 + (int)(((r+g+b)/3)/10.3);
+	} else {
+		r = (int)(r / 42.6);
+		g = (int)(g / 42.6);
+		b = (int)(b / 42.6);
+		k = 16 + (r * 36) + (g * 6) + b;
+	}
+	r_cons_printf ("\x1b[%d;5;%dm", fg? 48: 38, k);
+}
+
 #endif
 
 R_API int r_cons_get_cur_line(void) {
@@ -316,6 +310,17 @@ R_API int r_cons_get_cur_line(void) {
 	}
 	curline = info.dwCursorPosition.Y - info.srWindow.Top;
 #endif
+
+#ifdef __sun
+static inline void cfmakeraw(struct termios *tm) {
+	tm->c_cflag &= ~(CSIZE | PARENB);
+	tm->c_cflag |= CS8;
+	tm->c_iflag &= ~(IMAXBEL | IGNBRK | BRKINT | PARMRK | ISTRIP | INLCR | IGNCR | ICRNL | IXON);
+	tm->c_oflag &= ~OPOST;
+	tm->c_lflag &= ~(ECHO | ECHONL | ICANON | ISIG | IEXTEN);
+}
+#endif
+
 #if R2__UNIX__ && !__wasi__
 	char buf[8];
 	struct termios save,raw;
@@ -340,13 +345,13 @@ R_API int r_cons_get_cur_line(void) {
 	return curline;
 }
 
-R_API void r_cons_break_timeout(int timeout) {
+R_API void r_kons_break_timeout(RCons *cons, int timeout) {
 	if (timeout > 0) {
-		I->timeout = r_time_now_mono () + (timeout * 1000);
-		I->otimeout = timeout;
+		cons->timeout = r_time_now_mono () + (timeout * 1000);
+		cons->otimeout = timeout;
 	} else {
-		I->otimeout = 0;
-		I->timeout = 0;
+		cons->otimeout = 0;
+		cons->timeout = 0;
 	}
 #if 0
 	I->timeout = (timeout && !I->timeout)
@@ -366,27 +371,29 @@ R_API void r_cons_sleep_end(void *user) {
 	r_kons_sleep_end (I, user);
 }
 
-R_API void r_cons_set_click(int x, int y) {
-	I->click_x = x;
-	I->click_y = y;
-	I->click_set = true;
-	I->mouse_event = 1;
+R_API void r_cons_set_click(RCons * R_NONNULL cons, int x, int y) {
+	R_RETURN_IF_FAIL (cons);
+	cons->click_x = x;
+	cons->click_y = y;
+	cons->click_set = true;
+	cons->mouse_event = 1;
 }
 
-R_API bool r_cons_get_click(int *x, int *y) {
+R_API bool r_cons_get_click(RCons * R_NONNULL cons, int *x, int *y) {
+	R_RETURN_VAL_IF_FAIL (cons, false);
 	if (x) {
-		*x = I->click_x;
+		*x = cons->click_x;
 	}
 	if (y) {
-		*y = I->click_y;
+		*y = cons->click_y;
 	}
-	bool set = I->click_set;
-	I->click_set = false;
+	bool set = cons->click_set;
+	cons->click_set = false;
 	return set;
 }
 
-R_API void r_cons_enable_highlight(const bool enable) {
-	I->enable_highlight = enable;
+R_API void r_cons_enable_highlight(RCons *cons, const bool enable) {
+	cons->enable_highlight = enable;
 }
 
 R_API bool r_kons_enable_mouse(RCons *cons, const bool enable) {
@@ -495,7 +502,6 @@ R_API void r_cons_pop(void) {
 }
 
 R_API void r_cons_context_load(RConsContext *context) {
-	// eprintf ("ctx.loa\n");
 	if (!I) {
 		I = &s_cons_global;
 	}
@@ -617,14 +623,6 @@ R_API void r_cons_flush(void) {
 	r_kons_flush (I);
 }
 
-R_API void r_cons_visual_flush(void) {
-	r_kons_visual_flush (I);
-}
-
-R_API void r_cons_print_fps(int col) {
-	r_kons_print_fps (I, col);
-}
-
 R_API void r_cons_visual_write(char *buffer) {
 	r_kons_visual_write (I, buffer);
 }
@@ -636,10 +634,6 @@ R_API int r_cons_get_column(void) {
 /* final entrypoint for adding stuff in the buffer screen */
 R_API int r_cons_write(const char *str, int len) {
 	return r_kons_write (I, str, len);
-}
-
-R_API void r_cons_memset(char ch, int len) {
-	r_kons_memset (I, ch, len);
 }
 
 R_API void r_cons_print(const char *str) {
@@ -707,10 +701,10 @@ R_API int r_cons_get_size(int *rows) {
 	return r_kons_get_size (I, rows);
 }
 
-
-R_API void r_cons_invert(int set, int color) {
-	r_kons_invert (I, set, color);
+R_API void r_cons_invert(RCons *cons, int set, int color) {
+	r_kons_print (cons, R_CONS_INVERT (set, color));
 }
+
 
 #if 0
 Enable/Disable scrolling in terminal:
@@ -807,8 +801,9 @@ R_API bool r_cons_drop(int n) {
 	return r_kons_drop (I, n);
 }
 
-R_API void r_cons_trim(void) {
-	r_kons_trim (I);
+static void mygrep(RCons *cons, const char *grep) {
+	r_cons_grep_expression (cons, grep);
+	r_kons_grepbuf (cons);
 }
 
 R_API void r_cons_bind(RCons *cons, RConsBind *bind) {
@@ -818,7 +813,7 @@ R_API void r_cons_bind(RCons *cons, RConsBind *bind) {
 	bind->get_cursor = r_kons_get_cursor;
 	bind->cb_printf = r_kons_printf;
 	bind->cb_flush = r_kons_flush;
-	bind->cb_grep = r_kons_grep;
+	bind->cb_grep = mygrep;
 	bind->is_breaked = r_kons_is_breaked;
 }
 
@@ -839,37 +834,6 @@ R_API const char* r_cons_get_rune(const ut8 ch) {
 	return NULL;
 }
 
-R_API void r_cons_breakword(const char * R_NULLABLE s) {
-	r_kons_breakword (I, s);
-}
-
-R_API void r_cons_clear_buffer(void) {
-	r_kons_clear_buffer (I);
-}
-
-// conceptually wrong, needs redesign
-R_API void r_cons_thready(void) {
-	I = &s_cons_thread;
-#if 0
-	if (I->refcnt > 0) {
-		R_CRITICAL_ENTER (I);
-	}
-#endif
-	RConsContext *ctx = getctx ();
-	if (ctx) {
-		C->unbreakable = true;
-	}
-	r_sys_signable (false); // disable signal handling
-#if 0
-	if (I->refcnt == 0) {
-		r_cons_new ();
-	}
-	if (I->refcnt > 0) {
-		R_CRITICAL_LEAVE (I);
-	}
-#endif
-}
-
 #if WITH_STATIC_THEMES
 #include "d_themes.inc.c"
 
@@ -882,23 +846,6 @@ R_API const RConsTheme* r_cons_themes(void) {
 	return NULL;
 }
 #endif
-
-R_API void r_cons_mark(ut64 addr, const char *name) {
-	r_kons_mark (I, addr, name);
-}
-
-// must be called before
-R_API void r_cons_mark_flush(void) {
-	r_kons_mark_flush (I);
-}
-
-R_API RConsMark *r_cons_mark_at(ut64 addr, const char *name) {
-	return r_kons_mark_at (I, addr, name);
-}
-
-R_API void r_cons_printf_list(const char *format, va_list ap) {
-	r_kons_printf_list (I, format, ap);
-}
 
 R_API int r_cons_printf(const char *format, ...) {
 	va_list ap;

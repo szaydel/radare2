@@ -1496,7 +1496,7 @@ static bool cmd_anal_aaft(RCore *core) {
 	return true;
 }
 
-static void type_cmd(RCore *core, const char *input) {
+static void cmd_aft(RCore *core, const char *input) {
 	RAnalFunction *fcn = r_anal_get_fcn_in (core->anal, core->addr, -1);
 	if (!fcn && *input != '?') {
 		R_LOG_WARN ("cant find function here");
@@ -1623,7 +1623,7 @@ static void var_help(RCore *core, char ch) {
 	}
 }
 
-static void var_accesses_list(RAnalFunction *fcn, RAnalVar *var, PJ *pj, int access_type, const char *name) {
+static void var_accesses_list(RCore *core, RAnalFunction *fcn, RAnalVar *var, PJ *pj, int access_type, const char *name) {
 	RAnalVarAccess *acc;
 	bool first = true;
 	if (r_vector_empty (&var->accesses)) {
@@ -1634,7 +1634,7 @@ static void var_accesses_list(RAnalFunction *fcn, RAnalVar *var, PJ *pj, int acc
 		pj_ks (pj, "name", name);
 		pj_ka (pj, "addrs");
 	} else {
-		r_cons_printf ("%10s", name);
+		r_kons_printf (core->cons, "%10s", name);
 	}
 	r_vector_foreach (&var->accesses, acc) {
 		if (!(acc->type & access_type)) {
@@ -1644,7 +1644,7 @@ static void var_accesses_list(RAnalFunction *fcn, RAnalVar *var, PJ *pj, int acc
 		if (pj) {
 			pj_n (pj, addr);
 		} else {
-			r_cons_printf ("%s0x%" PFMT64x, first ? "  " : ",", addr);
+			r_kons_printf (core->cons, "%s0x%" PFMT64x, first ? "  " : ",", addr);
 		}
 		first = false;
 	}
@@ -1652,7 +1652,7 @@ static void var_accesses_list(RAnalFunction *fcn, RAnalVar *var, PJ *pj, int acc
 		pj_end (pj);
 		pj_end (pj);
 	} else {
-		r_cons_newline ();
+		r_kons_newline (core->cons);
 	}
 }
 
@@ -1687,6 +1687,14 @@ static void list_vars(RCore *core, RAnalFunction *fcn, PJ *pj, int type, const c
 		return;
 	}
 	if (type == '*') {
+		r_list_foreach (list, iter, var) {
+			r_cons_printf ("afv%c %d %s %s\n", var->kind, var->delta,
+					var->name, var->type);
+		}
+		r_list_free (list);
+		return;
+	}
+	if (type == 'd') {
 		const char *bp = r_reg_alias_getname (core->anal->reg, R_REG_ALIAS_BP);
 		r_cons_printf ("f-fcnvar*\n");
 		r_list_foreach (list, iter, var) {
@@ -1704,14 +1712,14 @@ static void list_vars(RCore *core, RAnalFunction *fcn, PJ *pj, int type, const c
 	if (pj) {
 		pj_a (pj);
 	}
-	if (name && *name) {
+	if (R_STR_ISNOTEMPTY (name)) {
 		var = r_anal_function_get_var_byname (fcn, name);
 		if (var) {
-			var_accesses_list (fcn, var, pj, access_type, var->name);
+			var_accesses_list (core, fcn, var, pj, access_type, var->name);
 		}
 	} else {
 		r_list_foreach (list, iter, var) {
-			var_accesses_list (fcn, var, pj, access_type, var->name);
+			var_accesses_list (core, fcn, var, pj, access_type, var->name);
 		}
 	}
 	if (pj) {
@@ -1915,7 +1923,7 @@ static void __cmd_afvf(RCore *core, const char *input) {
 
 }
 
-static int var_cmd(RCore *core, const char *str) {
+static int cmd_afv(RCore *core, const char *str) {
 	int delta, type = *str, res = true;
 	RAnalVar *v1;
 	RAnalFunction *fcn = r_anal_get_fcn_in (core->anal, core->addr, -1);
@@ -1927,11 +1935,29 @@ static int var_cmd(RCore *core, const char *str) {
 		case 'j':
 			r_cons_println ("{}");
 			break;
+		case 0:
+			R_LOG_ERROR ("No function found in current offset");
+			break;
 		default:
 			if (str[1] == '?') {
-				char cmd[5] = "afvb";
-				cmd[3] = str[0];
-				r_core_cmd_help_match (core, help_msg_afv, cmd);
+				switch (str[0]) {
+				case 'b':
+					r_core_cmd_help (core, help_msg_afvb);
+					break;
+				case 's':
+					r_core_cmd_help (core, help_msg_afvs);
+					break;
+				case 'r':
+					r_core_cmd_help (core, help_msg_afvr);
+					break;
+				default:
+					{
+						char cmd[] = "afvr";
+						cmd[3] = str[0];
+						r_core_cmd_help_contains (core, help_msg_afv, cmd);
+					}
+					break;
+				}
 			} else {
 				R_LOG_ERROR ("No function found in current offset");
 			}
@@ -2086,6 +2112,8 @@ static int var_cmd(RCore *core, const char *str) {
 	case 'd': // "afvd"
 		if (!fcn) {
 			R_LOG_ERROR ("Cannot find function");
+		} else if (str[1] == '*') {
+			list_vars (core, fcn, NULL, 'd', NULL);
 		} else if (str[1]) {
 			p = strchr (ostr, ' ');
 			if (!p) {
@@ -2261,7 +2289,7 @@ static int var_cmd(RCore *core, const char *str) {
 		*name++ = 0;
 		r_str_trim_head (name);
 
-		if (type == 'r') { //registers
+		if (type == 'r') { // registers
 			RRegItem *ri = r_reg_get (core->anal->reg, p, -1);
 			if (!ri) {
 				R_LOG_ERROR ("Register not found");
@@ -2938,9 +2966,9 @@ static void core_anal_bytes(RCore *core, const ut8 *buf, int len, int nops, int 
 			int minsz = R_MIN (len, size);
 			minsz = R_MAX (minsz, 0);
 			for (j = 0; j < minsz; j++) {
-				r_cons_printf ("%02x", buf[idx + j]);
+				r_kons_printf (core->cons, "%02x", buf[idx + j]);
 			}
-			r_cons_newline ();
+			r_kons_newline (core->cons);
 			if (op.val != UT64_MAX) {
 				printline ("val", "0x%08" PFMT64x "\n", op.val);
 			}
@@ -3586,7 +3614,7 @@ static bool anal_fcn_list_bb(RCore *core, const char *input, bool one) {
 					r_cons_printf (" s 0x%08" PFMT64x, cop->addr);
 				}
 			}
-			r_cons_newline ();
+			r_kons_newline (core->cons);
 			break;
 		}
 	}
@@ -4441,7 +4469,7 @@ static void cmd_afbo(RCore *core, const char *input) {
 
 R_API char *fcnshowr(RAnalFunction *function) {
 	RAnal *a = function->anal;
-	//PJ *pj = a->coreb.pjWithEncoding (a->coreb.core);
+	// PJ *pj = a->coreb.pjWithEncoding (a->coreb.core);
 	const char *realname = NULL, *import_substring = NULL;
 	RStrBuf *sb = r_strbuf_new ("");
 
@@ -4645,10 +4673,11 @@ static void cmd_afbc(RCore *core, const char *input) {
 	} else if (!*ptr) {
 		RAnalBlock *bb = r_anal_get_block_at (core->anal, core->addr);
 		if (bb && (bb->color.r || bb->color.g || bb->color.b)) {
-			char *s = r_cons_rgb_str (NULL, -1, &bb->color);
+			RCons *cons = core->cons;
+			char *s = r_cons_rgb_str (cons, NULL, -1, &bb->color);
 			if (s) {
 				char *name = r_cons_rgb_tostring (bb->color.r, bb->color.g, bb->color.b);
-				r_cons_printf ("%s%s"Color_RESET"\n", s, name);
+				r_kons_printf (cons, "%s%s"Color_RESET"\n", s, name);
 				free (name);
 				free (s);
 			}
@@ -4670,7 +4699,7 @@ static void cmd_afbc(RCore *core, const char *input) {
 		if (del) {
 			ptr--;
 		} else {
-			char *ansi = r_cons_pal_parse (ptr, &color);
+			char *ansi = r_cons_pal_parse (core->cons, ptr, &color);
 			valid_color = ansi != NULL;
 			free (ansi);
 		}
@@ -4690,19 +4719,21 @@ static void xrefs_map(RCore *core, const char *input) {
 	RAnalFunction *f, *f2;
 	int col = 0;
 	int count = 0;
+	RCons *cons = core->cons;
+	RList *fcns = core->anal->fcns;
 	do {
-		r_cons_print ("             ");
+		r_kons_print (cons, "             ");
 		count = 0;
-		r_list_foreach (core->anal->fcns, iter, f) {
+		r_list_foreach (fcns, iter, f) {
 			int nlen = strlen (f->name);
 			if (col >= nlen) {
-				r_cons_printf ("|");
+				r_kons_printf (cons, "|");
 				continue;
 			}
 			count++;
-			r_cons_printf ("%c", f->name[col]);
+			r_kons_printf (cons, "%c", f->name[col]);
 		}
-		r_cons_newline ();
+		r_kons_newline (cons);
 		col++;
 	} while (count);
 
@@ -5376,7 +5407,7 @@ static void cmd_afe(RCore *core, const char *input) {
 #endif
 
 static int cmd_af(RCore *core, const char *input) {
-	r_cons_break_timeout (r_config_get_i (core->config, "anal.timeout"));
+	r_kons_break_timeout (core->cons, r_config_get_i (core->config, "anal.timeout"));
 	switch (input[1]) {
 	case '-': // "af-"
 		if (!input[2]) { // "af-"
@@ -5718,6 +5749,7 @@ static int cmd_af(RCore *core, const char *input) {
 		case 'q':
 			{
 				RAnalFunction *fcn = r_anal_get_fcn_in (core->anal, core->addr, R_ANAL_FCN_TYPE_NULL);
+				RCons *cons = core->cons;
 				if (fcn) {
 					// TODO: add info about xrefs and call counts
 					int nargs = r_type_func_args_count (core->anal->sdb_types, fcn->name);
@@ -5726,31 +5758,31 @@ static int cmd_af(RCore *core, const char *input) {
 					int ebbs = 0;
 					int edges = r_anal_function_count_edges (fcn, &ebbs);
 					r_anal_function_count_edges (fcn, NULL);
-					r_cons_printf ("0x%08" PFMT64x " : %s\n", fcn->addr, fcn->name);
+					r_kons_printf (cons, "0x%08" PFMT64x " : %s\n", fcn->addr, fcn->name);
 					char *sig = r_core_cmd_strf (core, "afcf @ 0x%"PFMT64x, fcn->addr);
 					if (sig) {
 						r_str_trim (sig);
-						r_cons_printf ("  sign:  %s\n", sig);
+						r_kons_printf (cons, "  sign:  %s\n", sig);
 						free (sig);
 					}
-					r_cons_printf ("  stack: 0x%08x (vars:%d args:%d)\n",
+					r_kons_printf (cons, "  stack: 0x%08x (vars:%d args:%d)\n",
 						fcn->maxstack, nvars , nargs);
-					r_cons_printf ("  size:  %d (0x%08" PFMT64x " .. 0x%08" PFMT64x ")\n",
+					r_kons_printf (cons, "  size:  %d (0x%08" PFMT64x " .. 0x%08" PFMT64x ")\n",
 						(int)r_anal_function_realsize (fcn),
 						r_anal_function_min_addr (fcn),
 						r_anal_function_max_addr (fcn));
-					r_cons_printf ("  nbbs:  %d edges:%d ebbs:%d ninstr:%d\n",
+					r_kons_printf (cons, "  nbbs:  %d edges:%d ebbs:%d ninstr:%d\n",
 						r_list_length (fcn->bbs), edges, ebbs, nins);
-					r_cons_printf ("  cost:  %d complexity:%d\n",
+					r_kons_printf (cons, "  cost:  %d complexity:%d\n",
 						r_anal_function_cost (fcn), r_anal_function_complexity (fcn));
-					r_cons_printf ("  attr:  ");
+					r_kons_printf (cons, "  attr:  ");
 					if (r_anal_function_islineal (fcn)) {
-						r_cons_print ("lineal");
+						r_kons_print (cons, "lineal");
 					}
 					if (fcn->is_noreturn) {
-						r_cons_print ("noreturn");
+						r_kons_print (cons, "noreturn");
 					}
-					r_cons_newline ();
+					r_kons_newline (cons);
 				}
 			}
 			break;
@@ -5859,7 +5891,7 @@ static int cmd_af(RCore *core, const char *input) {
 			r_core_anal_fcn_list (core, NULL, input + 2);
 			break;
 		case 'c': // "aflc"
-			r_cons_printf ("%d\n", r_list_length (core->anal->fcns));
+			r_kons_printf (core->cons, "%d\n", r_list_length (core->anal->fcns));
 			break;
 		case ' ': // "afl [addr]" argument ignored
 		case 0: // "afl"
@@ -6003,10 +6035,10 @@ static int cmd_af(RCore *core, const char *input) {
 		r_core_anal_fmap (core, input + 1);
 		break;
 	case 'v': // "afv"
-		var_cmd (core, input + 2);
+		cmd_afv (core, input + 2);
 		break;
 	case 't': // "aft"
-		type_cmd (core, input + 2);
+		cmd_aft (core, input + 2);
 		break;
 	case 'C': // "afC"
 		if (input[2] == 'c') {
@@ -8498,11 +8530,11 @@ static void cmd_aeg(RCore *core, int argc, char *argv[]) {
 					r_anal_op_free (aop);
 					return;
 				}
-				RAGraph *agraph = r_agraph_new_from_graph (dfg->flow, &cbs, NULL);
+				RAGraph *agraph = r_agraph_new_from_graph (core, dfg->flow, &cbs, NULL);
 				r_anal_esil_dfg_free (dfg);
 				agraph->can->linemode = r_config_get_i (core->config, "graph.linemode");
 				agraph->layout = r_config_get_i (core->config, "graph.layout");
-				r_agraph_print (agraph);
+				r_agraph_print (agraph, core);
 				r_agraph_free (agraph);
 			}
 			r_anal_op_free (aop);
@@ -8520,11 +8552,11 @@ static void cmd_aeg(RCore *core, int argc, char *argv[]) {
 					r_config_get_b (core->config, "esil.dfg.mapinfo"),
 					r_config_get_b (core->config, "esil.dfg.maps"));
 			if (dfg) {
-				RAGraph *agraph = r_agraph_new_from_graph (dfg->flow, &cbs, NULL);
+				RAGraph *agraph = r_agraph_new_from_graph (core, dfg->flow, &cbs, NULL);
 				r_anal_esil_dfg_free (dfg);
 				agraph->can->linemode = r_config_get_i (core->config, "graph.linemode");
 				agraph->layout = r_config_get_i (core->config, "graph.layout");
-				r_agraph_print (agraph);
+				r_agraph_print (agraph, core);
 				r_agraph_free (agraph);
 			}
 			free (esilexpr);
@@ -8558,7 +8590,7 @@ static void cmd_aeg(RCore *core, int argc, char *argv[]) {
 					r_anal_op_free (aop);
 					return;
 				}
-				agraph = r_agraph_new_from_graph (dfg->flow, &cbs, NULL);
+				agraph = r_agraph_new_from_graph (core, dfg->flow, &cbs, NULL);
 				r_anal_esil_dfg_free (dfg);
 			}
 			r_anal_op_free (aop);
@@ -8567,7 +8599,7 @@ static void cmd_aeg(RCore *core, int argc, char *argv[]) {
 				r_config_get_b (core->config, "esil.dfg.mapinfo"),
 				r_config_get_b (core->config, "esil.dfg.maps"));
 			R_RETURN_IF_FAIL (dfg);
-			agraph = r_agraph_new_from_graph (dfg->flow, &cbs, NULL);
+			agraph = r_agraph_new_from_graph (core, dfg->flow, &cbs, NULL);
 			r_anal_esil_dfg_free (dfg);
 		}
 		const ut64 osc = r_config_get_i (core->config, "scr.color");
@@ -8655,7 +8687,9 @@ static void cmd_aep(RCore *core, const char *input) {
 	ut64 addr = core->addr;
 	switch (input[1]) {
 	case 'a': // "aepa"
-		if (input[2] == ' ') {
+		if (input[2] == '?') {
+			r_core_cmd_help_contains (core, help_msg_aep, "aepa");
+		} else if (input[2] == ' ') {
 			addr = r_num_math (core->num, input + 2);
 		}
 		// get flag in current offset
@@ -8762,10 +8796,14 @@ static void cmd_aes(RCore *core, const char *input) {
 		}
 		break;
 	case 'b': // "aesb"
-		if (!r_core_esil_step_back (core)) {
-			R_LOG_ERROR ("Cannot step back");
+		if (input[2] == '?') {
+			r_core_cmd_help_contains (core, help_msg_aes, "aesb");
+		} else {
+			if (!r_core_esil_step_back (core)) {
+				R_LOG_ERROR ("Cannot step back");
+			}
+			r_core_cmd0 (core, ".ar*");
 		}
-		r_core_cmd0 (core, ".ar*");
 		break;
 	case 'B': // "aesB"
 		n = strchr (input + 2, ' ');
@@ -9047,6 +9085,9 @@ static void cmd_anal_esil(RCore *core, const char *input, bool verbose) {
 		}
 		r_esil_stack_free (esil);
 		break;
+	case 0:
+		R_LOG_ERROR ("Expected argument or subcommand. See 'ae?' for details");
+		break;
 	case 's': // "aes" "aeso" "aesu" "aesue"
 		cmd_aes (core, input);
 		break;
@@ -9191,7 +9232,7 @@ static void cmd_anal_esil(RCore *core, const char *input, bool verbose) {
 			cmd_aei (core);
 			break;
 		default:
-			cmd_esil_mem (core, "?");
+			r_core_cmd_help (core, help_msg_aei);
 			break;
 		}
 		break;
@@ -11863,11 +11904,12 @@ static void cmd_agraph_node(RCore *core, const char *input) {
 			}
 			body = r_str_append (body, "\n");
 			if (n_args > 2) {
+				eprintf ("(%s)(%s)(%s)\n", args[0], args[1], args[2]);
 				RColor kolor = {0};
-				char *akolor = r_cons_pal_parse (args[2], &kolor);
+				char *akolor = r_cons_pal_parse (core->cons, args[2], &kolor);
 				free (akolor);
 				if (akolor != NULL) {
-					color = r_cons_rgb_str (NULL, -1, &kolor);
+					color = r_cons_rgb_str (core->cons, NULL, -1, &kolor);
 				}
 			}
 		} else {
@@ -11970,11 +12012,11 @@ static void cmd_agraph_edge(RCore *core, const char *input) {
 R_API void cmd_agfb(RCore *core) {
 	const int c = r_config_get_b (core->config, "scr.color");
 	r_config_set_i (core->config, "scr.color", 0);
-	r_cons_push ();
+	r_kons_push (core->cons);
 	r_core_visual_graph (core, NULL, NULL, false);
 	r_config_set_i (core->config, "scr.color", c);
-	char *s = strdup (r_cons_singleton()->context->buffer);
-	r_cons_pop ();
+	char *s = strdup (core->cons->context->buffer);
+	r_kons_pop (core->cons);
 	cmd_agfb2 (core, s);
 	free (s);
 }
@@ -11982,13 +12024,13 @@ R_API void cmd_agfb(RCore *core) {
 R_API void cmd_aggb(RCore *core) {
 	const int c = r_config_get_b (core->config, "scr.color");
 	r_config_set_i (core->config, "scr.color", 0);
-	r_cons_push ();
+	r_kons_push (core->cons);
 	int ograph_zoom = r_config_get_i (core->config, "graph.zoom");
 	r_config_set_i (core->config, "graph.zoom", 1);
 	r_core_cmd_call (core, "agg");
 	r_config_set_i (core->config, "scr.color", c);
-	char *s = strdup (r_cons_singleton()->context->buffer);
-	r_cons_pop ();
+	char *s = strdup (core->cons->context->buffer);
+	r_kons_pop (core->cons);
 	cmd_agfb2 (core, s);
 	r_config_set_i (core->config, "graph.zoom", ograph_zoom);
 	free (s);
@@ -12213,31 +12255,19 @@ R_API void r_core_agraph_treemap(RCore *core, int use_utf, const char *input) {
 	int a = r_config_get_i (core->config, "scr.color");
 	r_config_set_i (core->config, "scr.color", 0);
 	// walk all the functions and create a treemap and render it
-	int h, w = r_cons_get_size (&h);
+	int h, w = r_kons_get_size (core->cons, &h);
 	w--;
 	h--;
-	RConsCanvas *canvas = r_cons_canvas_new (w, h);
+	RConsCanvas *canvas = r_cons_canvas_new (core->cons, w, h, R_CONS_CANVAS_FLAG_INHERIT);
 	r_cons_canvas_box (canvas, 1, 1, w - 1, h - 1, "");
 	RListIter *iter;
 	RAnalFunction *fcn = NULL;
 	RList *maps = r_list_newf (free_item);
-#if 1
 	RList *list = r_anal_get_fcns (core->anal);
 	r_list_foreach (list, iter, fcn) {
 		ut64 fsz = r_anal_function_realsize (fcn);
 		r_list_append (maps, add_item (fcn, fcn->name, fcn->addr, fsz));
 	}
-#else
-	RAnalBlock *bb;
-	if (!fcn) {
-		fcn = r_anal_get_function_at (core->anal, core->addr);
-		r_list_foreach (fcn->bbs, iter, bb) {
-			char *name = r_str_newf ("%d", (int)(size_t)(bb->addr - fcn->addr));
-			r_list_append (maps, add_item (fcn, name, bb->addr, bb->size));
-			free (name);
-		}
-	}
-#endif
 	treemap_layout (canvas, maps);
 	TreeMapItem *mi;
 	r_list_foreach (maps, iter, mi) {
@@ -12277,7 +12307,7 @@ R_API void r_core_agraph_print(RCore *core, int use_utf, const char *input) {
 		core->graph->can->linemode = r_config_get_i (core->config, "graph.linemode");
 		core->graph->can->color = r_config_get_i (core->config, "scr.color");
 		r_agraph_set_title (core->graph, r_config_get (core->config, "graph.title"));
-		r_agraph_print (core->graph);
+		r_agraph_print (core->graph, core);
 		break;
 	case 't': { // "aggt" - tiny graph
 		core->graph->is_tiny = true;
@@ -12367,13 +12397,13 @@ R_API void r_core_agraph_print(RCore *core, int use_utf, const char *input) {
 		}
 		break;
 	case 'g':
-		r_cons_printf ("graph\n[\n"
+		r_kons_printf (core->cons, "graph\n[\n"
 			       "hierarchic 1\n"
 			       "label \"\"\n"
 			       "directed 1\n");
 		r_agraph_foreach (core->graph, agraph_print_node_gml, NULL);
 		r_agraph_foreach_edge (core->graph, agraph_print_edge_gml, NULL);
-		r_cons_print ("]\n");
+		r_kons_print (core->cons, "]\n");
 		break;
 	case 'w': // "aggw"
 		{
@@ -12381,16 +12411,20 @@ R_API void r_core_agraph_print(RCore *core, int use_utf, const char *input) {
 			convert_dotcmd_to_image (core, "aggd", filename);
 		}
 		break;
-	default:
+	case '?':
 		r_core_cmd_help (core, help_msg_ag);
+		break;
+	default:
+		r_core_return_invalid_command (core, "ag", input[0]);
 		break;
 	}
 }
 
-static void print_graph_agg(RGraph /*RGraphNodeInfo*/ *graph) {
+static void print_graph_agg(RCore *core, RGraph /*RGraphNodeInfo*/ *graph) {
 	RGraphNodeInfo *print_node;
 	RGraphNode *node, *target;
 	RListIter *it, *edge_it;
+	RCons *cons = core->cons;
 	r_list_foreach (graph->nodes, it, node) {
 		print_node = node->data;
 		if (R_STR_ISNOTEMPTY (print_node->body)) {
@@ -12400,17 +12434,17 @@ static void print_graph_agg(RGraph /*RGraphNodeInfo*/ *graph) {
 				len--;
 			}
 			char *encbody = r_base64_encode_dyn ((const ut8*)print_node->body, len);
-			r_cons_printf ("agn \"%s\" base64:%s\n", print_node->title, encbody);
+			r_kons_printf (cons, "'agn \"%s\" base64:%s\n", print_node->title, encbody);
 			free (encbody);
 		} else {
-			r_cons_printf ("agn \"%s\"\n", print_node->title);
+			r_kons_printf (cons, "'agn \"%s\"\n", print_node->title);
 		}
 	}
 	r_list_foreach (graph->nodes, it, node) {
 		print_node = node->data;
 		r_list_foreach (node->out_nodes, edge_it, target) {
 			RGraphNodeInfo *to = target->data;
-			r_cons_printf ("age \"%s\" \"%s\"\n", print_node->title, to->title);
+			r_kons_printf (cons, "'age \"%s\" \"%s\"\n", print_node->title, to->title);
 		}
 	}
 }
@@ -12452,14 +12486,14 @@ static void r_core_graph_print(RCore *core, RGraph /*<RGraphNodeInfo>*/ *graph, 
 			.get_title = _graph_node_info_get_title,
 			.get_body = _graph_node_info_get_body
 		};
-		agraph = r_agraph_new_from_graph (graph, &cbs, NULL);
+		agraph = r_agraph_new_from_graph (core, graph, &cbs, NULL);
 		switch (*input) {
 		case 0:
 			agraph->can->linemode = r_config_get_i (core->config, "graph.linemode");
 			agraph->can->color = r_config_get_i (core->config, "scr.color");
 			r_agraph_set_title (agraph,
 				r_config_get (core->config, "graph.title"));
-			r_agraph_print (agraph);
+			r_agraph_print (agraph, core);
 			break;
 		case 't': // "ag_t" - tiny graph
 			{
@@ -12489,7 +12523,7 @@ static void r_core_graph_print(RCore *core, RGraph /*<RGraphNodeInfo>*/ *graph, 
 				agraph->force_update_seek = true;
 				agraph->need_set_layout = true;
 				agraph->layout = r_config_get_i (core->config, "graph.layout");
-				bool ov = r_cons_is_interactive ();
+				bool ov = r_kons_is_interactive (core->cons);
 				agraph->need_update_dim = true;
 				int update_seek = r_core_visual_graph (core, agraph, NULL, true);
 				r_config_set_b (core->config, "scr.interactive", ov);
@@ -12510,13 +12544,13 @@ static void r_core_graph_print(RCore *core, RGraph /*<RGraphNodeInfo>*/ *graph, 
 		{
 			char *dot_text = print_graph_dot (core, graph);
 			if (dot_text) {
-				r_cons_print (dot_text);
+				r_kons_print (core->cons, dot_text);
 				free (dot_text);
 			}
 		}
 		break;
 	case '*': // "ag_*" -
-		print_graph_agg (graph);
+		print_graph_agg (core, graph);
 		break;
 	case 'J':
 	case 'j': // "ag_j"
@@ -12524,19 +12558,19 @@ static void r_core_graph_print(RCore *core, RGraph /*<RGraphNodeInfo>*/ *graph, 
 			PJ *pj = r_core_pj_new (core);
 			if (pj) {
 				r_graph_drawable_to_json (graph, pj, use_offset);
-				r_cons_println (pj_string (pj));
+				r_kons_println (core->cons, pj_string (pj));
 				pj_free (pj);
 			}
 		}
 		break;
 	case 'g': // "ag_j"
-		r_cons_printf ("graph\n[\n"
+		r_kons_printf (core->cons, "graph\n[\n"
 			       "hierarchic 1\n"
 			       "label \"\"\n"
 			       "directed 1\n");
 		r_list_foreach (graph->nodes, it, graphNode) {
 			print_node = graphNode->data;
-			r_cons_printf ("  node [\n"
+			r_kons_printf (core->cons, "  node [\n"
 				       "    id  %d\n"
 				       "    label  \"%s\"\n"
 				       "  ]\n",
@@ -12545,14 +12579,14 @@ static void r_core_graph_print(RCore *core, RGraph /*<RGraphNodeInfo>*/ *graph, 
 		r_list_foreach (graph->nodes, it, graphNode) {
 			print_node = graphNode->data;
 			r_list_foreach (graphNode->out_nodes, edge_it, target) {
-				r_cons_printf ("  edge [\n"
+				r_kons_printf (core->cons, "  edge [\n"
 					       "    source  %d\n"
 					       "    target  %d\n"
 					       "  ]\n",
 					graphNode->idx, target->idx);
 			}
 		}
-		r_cons_print ("]\n");
+		r_kons_print (core->cons, "]\n");
 		break;
 	case 'w': { // "ag_w"
 		const char *filename = r_str_trim_head_ro (input + 1);
@@ -12761,7 +12795,7 @@ static bool cmd_graph_mermaid(RCore *core, bool add_asm) {
 
 static void cmd_anal_graph(RCore *core, const char *input) {
 	core->graph->show_node_titles = r_config_get_i (core->config, "graph.ntitles");
-	r_cons_enable_highlight (false);
+	r_cons_enable_highlight (core->cons, false);
 	if (*input == '?') {
 		r_core_cmd_help (core, help_msg_ag);
 		return;
@@ -12827,8 +12861,8 @@ static void cmd_anal_graph(RCore *core, const char *input) {
 			// Honor asm.graph=false in json as well
 			RConfigHold *hc = r_config_hold_new (core->config);
 			r_config_hold (hc, "asm.addr", NULL);
-			const bool o_graph_offset = r_config_get_i (core->config, "graph.offset");
-			r_config_set_i (core->config, "asm.addr", o_graph_offset);
+			const bool o_graph_addr = r_config_get_b (core->config, "graph.addr");
+			r_config_set_b (core->config, "asm.addr", o_graph_addr);
 			r_core_anal_graph (core, r_num_math (core->num, input + 2),
 				R_CORE_ANAL_JSON | R_CORE_ANAL_JSON_FORMAT_DISASM);
 			r_config_hold_restore (hc);
@@ -12890,7 +12924,7 @@ static void cmd_anal_graph(RCore *core, const char *input) {
 		case 0:
 			core->graph->is_callgraph = true;
 			r_core_cmdf (core, "ag-; .agC*;");
-			r_core_agraph_print(core, -1, input + 1);
+			r_core_agraph_print (core, -1, input + 1);
 			core->graph->is_callgraph = false;
 			break;
 		case 'J':
@@ -13519,7 +13553,7 @@ static void cmd_anal_abtn(RCore *core, const char *input) {
 			}
 			if (arg) {
 				RColor k = {0};
-				char *s = r_cons_pal_parse (arg + 1, &k);
+				char *s = r_cons_pal_parse (core->cons, arg + 1, &k);
 				if (s)  {
 					core->anal->tracetagcolors[tag] = k;
 					free (s);
@@ -14166,15 +14200,15 @@ static void cmd_aaa(RCore *core, const char *input) {
 	if (r_str_startswith (input, "aaaaa")) {
 		R_LOG_INFO ("We fired the r2 developer that was heading to your location to help you analyze this binary");
 		R_LOG_INFO ("Contact support for premium service");
-		if (r_cons_is_interactive ()) {
-			r_cons_any_key (NULL);
+		if (r_kons_is_interactive (core->cons)) {
+			r_cons_any_key (core->cons, NULL);
 		}
 		goto jacuzzi;
 	}
 	ut64 curseek = core->addr;
 	logline (core, 5, "Analyze all flags starting with sym. and entry0 (aa)");
 	r_cons_break_push (NULL, NULL);
-	r_cons_break_timeout (r_config_get_i (core->config, "anal.timeout"));
+	r_kons_break_timeout (core->cons, r_config_get_i (core->config, "anal.timeout"));
 	bool anal_imports = false;
 	if (r_config_get_b (core->config, "anal.imports")) {
 		logline (core, 10, "Analyze imports (af@@@i)");
@@ -14750,6 +14784,7 @@ static int cmd_anal_all(RCore *core, const char *input) {
 }
 
 static bool anal_fcn_data(RCore *core, const char *input) {
+	RCons *cons = core->cons;
 	RAnalFunction *fcn = r_anal_get_fcn_in (core->anal, core->addr, R_ANAL_FCN_TYPE_ANY);
 	if (fcn) {
 		int i;
@@ -14757,16 +14792,18 @@ static bool anal_fcn_data(RCore *core, const char *input) {
 		ut64 gap_addr = UT64_MAX;
 		ut32 fcn_size = r_anal_function_size_from_entry (fcn);
 		char *bitmap = calloc (1, fcn_size);
-		if (bitmap) {
-			RAnalBlock *b;
-			RListIter *iter;
-			r_list_foreach (fcn->bbs, iter, b) {
-				int f = b->addr - fcn->addr;
-				int t = R_MIN (f + b->size, fcn_size);
-				if (f >= 0) {
-					while (f < t) {
-						bitmap[f++] = 1;
-					}
+		if (!bitmap) {
+			R_LOG_WARN ("Cannot allocate %d fcn_size", fcn_size);
+			return false;
+		}
+		RAnalBlock *b;
+		RListIter *iter;
+		r_list_foreach (fcn->bbs, iter, b) {
+			int f = b->addr - fcn->addr;
+			int t = R_MIN (f + b->size, fcn_size);
+			if (f >= 0) {
+				while (f < t) {
+					bitmap[f++] = 1;
 				}
 			}
 		}
@@ -14774,7 +14811,7 @@ static bool anal_fcn_data(RCore *core, const char *input) {
 			ut64 here = fcn->addr + i;
 			if (bitmap && bitmap[i]) {
 				if (gap) {
-					r_cons_printf ("Cd %" PFMT64u " @ 0x%08"PFMT64x"\n", here - gap_addr, gap_addr);
+					r_kons_printf (cons, "Cd %" PFMT64u " @ 0x%08"PFMT64x"\n", here - gap_addr, gap_addr);
 					gap = false;
 				}
 				gap_addr = UT64_MAX;
@@ -14786,7 +14823,7 @@ static bool anal_fcn_data(RCore *core, const char *input) {
 			}
 		}
 		if (gap) {
-			r_cons_printf ("Cd %" PFMT64u " @ 0x%08" PFMT64x "\n", fcn->addr + fcn_size - gap_addr, gap_addr);
+			r_kons_printf (cons, "Cd %" PFMT64u " @ 0x%08" PFMT64x "\n", fcn->addr + fcn_size - gap_addr, gap_addr);
 		}
 		free (bitmap);
 		return true;
@@ -14805,9 +14842,9 @@ static bool anal_fcn_data_gaps(RCore *core, const char *input) {
 			int range = fcn->addr - end;
 			if (range > 0) {
 				for (i = 0; i + wordsize < range; i+= wordsize) {
-					r_cons_printf ("Cd %d @ 0x%08"PFMT64x"\n", wordsize, end + i);
+					r_kons_printf (core->cons, "Cd %d @ 0x%08"PFMT64x"\n", wordsize, end + i);
 				}
-				r_cons_printf ("Cd %d @ 0x%08"PFMT64x"\n", range - i, end + i);
+				r_kons_printf (core->cons, "Cd %d @ 0x%08"PFMT64x"\n", range - i, end + i);
 			}
 		}
 		end = fcn->addr + r_anal_function_size_from_entry (fcn);
@@ -14888,7 +14925,15 @@ static void cmd_anal_virtual_functions(RCore *core, const char* input) {
 	case '\0': // "av"
 	case '*': // "av*"
 	case 'j': // "avj"
-		r_anal_vtables_list (core->anal, input[0]);
+		{
+			char *s = r_anal_vtables_list (core->anal, input[0]);
+			if (input[0] == 'j') {
+				r_kons_println (core->cons, s);
+			} else {
+				r_kons_print (core->cons, s);
+			}
+			free (s);
+		}
 		break;
 	case 'g': // "avg"
 		cmd_avg (core, input + 1);
@@ -15016,7 +15061,9 @@ static void cmd_acb(RCore *core, const char *input) {
 		}
 		if (R_STR_ISEMPTY (end)) {
 			if (c == ' ') {
-				r_anal_class_list_bases (core->anal, cstr);
+				char *res = r_anal_class_list_bases (core->anal, cstr);
+				r_kons_print (core->cons, res);
+				free (res);
 			} else /*if (c == '-')*/ {
 				R_LOG_ERROR ("No base id given");
 			}
@@ -15087,8 +15134,9 @@ static void cmd_anal_class_vtable(RCore *core, const char *input) {
 			end = (char *)r_str_trim_head_wp (class_arg); // in case of extra unwanted stuff at the cmd end
 			*end = '\0';
 		}
-		r_anal_class_list_vtable_offset_functions (core->anal, class_arg, offset_arg);
-
+		char *res = r_anal_class_list_vtable_offset_functions (core->anal, class_arg, offset_arg);
+		r_kons_print (core->cons, res);
+		free (res);
 		free (cstr);
 		break;
 	}
@@ -15111,7 +15159,9 @@ static void cmd_anal_class_vtable(RCore *core, const char *input) {
 
 		if (R_STR_ISEMPTY (end)) {
 			if (c == ' ') {
-				r_anal_class_list_vtables (core->anal, cstr);
+				char *res = r_anal_class_list_vtables (core->anal, cstr);
+				r_kons_print (core->cons, res);
+				free (res);
 			} else /*if (c == '-')*/ {
 				R_LOG_ERROR ("No vtable id given. See acv [class name]");
 			}
@@ -15188,7 +15238,9 @@ static void cmd_anal_classes(RCore *core, const char *input) {
 				break;
 			}
 		}
-		r_anal_class_list (core->anal, input[1]);
+		char *res = r_anal_class_list (core->anal, input[1]);
+		r_kons_print (core->cons, res);
+		free (res);
 		break;
 	case ' ': // "ac"
 	case '-': // "ac-"

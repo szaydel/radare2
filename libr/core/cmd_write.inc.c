@@ -4,11 +4,11 @@
 
 static RCoreHelpMessage help_msg_w = {
 	"Usage:", "w[x] [str] [<file] [<<EOF] [@addr]", "",
-	"w", "[1248][+-][n]", "increment/decrement byte,word..",
 	"w ", "foobar", "write string 'foobar'",
 	"w+", "string", "write string and seek to its null terminator",
 	"w0", " [len]", "write 'len' bytes with value 0x00",
 	"w6", "[d|e|x] base64/string/hex", "write base64 [d]ecoded or [e]ncoded string",
+	"w8", " [hexpairs]", "alias for wx",
 	"wa", "[?] push ebp", "write opcode, separated by ';' (use '\"' around the command)",
 	"waf", " f.asm", "assemble file and write bytes",
 	"waF", " f.asm", "assemble file and write bytes and show 'wx' op with hexpair bytes of assembled code",
@@ -22,6 +22,7 @@ static RCoreHelpMessage help_msg_w = {
 	"wf", "[fs] -|file", "write contents of file at current offset",
 	"wg", "[et] [http://host/file]", "download file from http server and save it to disk (wget)",
 	"wh", " r2", "whereis/which shell command",
+	"wi", "[1248][+-][n]", "increment/decrement byte,word..",
 	"wm", " f0ff", "set binary mask hexpair to be used as cyclic write mask",
 	"wo", "[?] hex", "write in block with operation. 'wo?' fmi",
 	"wp", "[?] -|file", "apply radare patch file. See wp? fmi",
@@ -31,7 +32,7 @@ static RCoreHelpMessage help_msg_w = {
 	"ww", " foobar", "write wide string 'f\\x00o\\x00o\\x00b\\x00a\\x00r\\x00'",
 	"wx", "[?][fs] 9090", "write two intel nops (from wxfile or wxseek)",
 	"wX", " 1b2c3d", "fill current block with cyclic hexpairs",
-	"wv", "[?] eip+34", "write 32-64 bit value honoring cfg.bigendian",
+	"wv", "[?] [expr]", "write [1,2,4,8]-byte size using cfg.bigendian",
 	"wu", " [unified-diff-patch]", "see 'cu'",
 	"wz", " string", "write zero terminated string (like w + \\x00)",
 	NULL
@@ -189,10 +190,10 @@ static RCoreHelpMessage help_msg_wv = {
 	"wv2", " 234", "write unsigned short (2 bytes) with this number",
 	"wv4", " 1 2 3", "write N space-separated dword (4 bytes)",
 	"wv8", " 234", "write qword (8 bytes) with this number",
-	"wvp", " 934", "write 4 or 8 byte pointer, depending on asm.bits",
-	"wvf", " 3.14", "write float value (4 bytes)",
 	"wvF", " 3.14", "write double value (8 bytes)",
+	"wvf", " 3.14", "write float value (4 bytes)",
 	"wvG", " 3.14", "write long double value (10/16 bytes)",
+	"wvp", " 934", "write 4 or 8 byte pointer, depending on asm.bits",
 	"Supported sizes are:", "1, 2, 4, 8", "",
 	NULL
 };
@@ -262,9 +263,9 @@ static void write_encrypted_block(RCore *core, const char *algo, const char *key
 		free (binkey);
 		return;
 	}
-	RCryptoJob *cj = r_crypto_use (core->crypto, algo);
-	if (cj && cj->h->type == R_CRYPTO_TYPE_ENCRYPT) {
-		if (r_crypto_job_set_key (cj, binkey, keylen, 0, direction)) {
+	RMutaSession *cj = r_muta_use (core->muta, algo);
+	if (cj && cj->h->type == R_MUTA_TYPE_CRYPTO) {
+		if (r_muta_session_set_key (cj, binkey, keylen, 0, direction)) {
 			if (iv) {
 				ut8 *biniv = malloc (strlen (iv) + 1);
 				int ivlen = r_hex_str2bin (iv, biniv);
@@ -272,15 +273,15 @@ static void write_encrypted_block(RCore *core, const char *algo, const char *key
 					ivlen = strlen(iv);
 					strcpy ((char *)biniv, iv);
 				}
-				if (!r_crypto_job_set_iv (cj, biniv, ivlen)) {
+				if (!r_muta_session_set_iv (cj, biniv, ivlen)) {
 					R_LOG_ERROR ("Invalid IV");
 					return;
 				}
 			}
-			r_crypto_job_update (cj, (const ut8*)core->block, core->blocksize);
+			r_muta_session_update (cj, (const ut8*)core->block, core->blocksize);
 
 			int result_size = 0;
-			ut8 *result = r_crypto_job_get_output (cj, &result_size);
+			ut8 *result = r_muta_session_get_output (cj, &result_size);
 			if (result) {
 				if (!r_core_write_at (core, core->addr, result, result_size)) {
 					R_LOG_ERROR ("write failed at 0x%08"PFMT64x, core->addr);
@@ -315,12 +316,12 @@ static void write_block_signature(RCore *core, const char *algo, const char *key
 		free (binkey);
 		return;
 	}
-	RCryptoJob *cj = r_crypto_use (core->crypto, algo);
-	if (cj && cj->h->type == R_CRYPTO_TYPE_SIGNATURE) {
-		if (r_crypto_job_set_key (cj, binkey, keylen, 0, R_CRYPTO_DIR_ENCRYPT)) {
-			r_crypto_job_update (cj, (const ut8 *)core->block, core->blocksize);
+	RMutaSession *cj = r_muta_use (core->muta, algo);
+	if (cj && cj->h->type == R_MUTA_TYPE_SIGN) {
+		if (r_muta_session_set_key (cj, binkey, keylen, 0, R_CRYPTO_DIR_ENCRYPT)) {
+			r_muta_session_update (cj, (const ut8 *)core->block, core->blocksize);
 			int result_size = 0;
-			ut8 *result = r_crypto_job_get_output (cj, &result_size);
+			ut8 *result = r_muta_session_get_output (cj, &result_size);
 			if (result) {
 				if (!r_core_write_at (core, core->addr, result, result_size)) {
 					R_LOG_ERROR ("write failed at 0x%08" PFMT64x, core->addr);
@@ -432,7 +433,7 @@ static int cmd_wo(void *data, const char *input) {
 			if (R_STR_ISNOTEMPTY (algo) && key) {
 				write_encrypted_block (core, algo, key, direction, iv);
 			} else {
-				r_crypto_list (core->crypto, r_cons_printf, 0, R_CRYPTO_TYPE_ENCRYPT);
+				r_muta_list (core->muta, r_cons_printf, 0, R_MUTA_TYPE_CRYPTO);
 				r_core_cmd_help_match_spec (core, help_msg_wo, "wo", input[0]);
 			}
 			free (args);
@@ -453,7 +454,7 @@ static int cmd_wo(void *data, const char *input) {
 			if (R_STR_ISNOTEMPTY (algo) && key) {
 				write_block_signature (core, algo, key);
 			} else {
-				r_crypto_list (core->crypto, r_cons_printf, 0, R_CRYPTO_TYPE_SIGNATURE);
+				r_muta_list (core->muta, r_cons_printf, 0, R_MUTA_TYPE_SIGN);
 				r_core_cmd_help_match_spec (core, help_msg_wo, "wo", input[0]);
 			}
 			free (args);
@@ -877,7 +878,7 @@ static void cmd_write_pcache(RCore *core, const char *input) {
 	RList *caches;
 	int fd;
 	bool rad = false;
-	if (core && core->io && core->io->p_cache && core->print && core->print->cb_printf) {
+	if (core && core->io && core->io->p_cache && core->print) {
 		switch (input[0]) {
 		case 'i' :
 			if (input[1]) {
@@ -890,7 +891,7 @@ static void cmd_write_pcache(RCore *core, const char *input) {
 			break;
 		case '*':
 			rad = true;
-		case ' ':	//fall-o-through
+		case ' ': // fall-o-through
 		case '\0':
 			if (input[0] && input[1]) {
 				fd = (int)r_num_math (core->num, input + 1);
@@ -1446,7 +1447,11 @@ static int cmd_wc(void *data, const char *input) {
 	RCore *core = (RCore *)data;
 	switch (input[0]) {
 	case '\0': // "wc"
-		r_io_cache_list (core->io, 0, false);
+		{
+			char *res = r_io_cache_list (core->io, 0, false);
+			r_kons_print (core->cons, res);
+			free (res);
+		}
 		break;
 	case 'd':
 		{
@@ -1482,10 +1487,15 @@ static int cmd_wc(void *data, const char *input) {
 		}
 		break;
 	case 'a':
-		if (input[1] == 'j') {
-			r_io_cache_list (core->io, 'j', true);
-		} else {
-			r_io_cache_list (core->io, 0, true);
+		{
+			char *res;
+			if (input[1] == 'j') {
+				res = r_io_cache_list (core->io, 'j', true);
+			} else {
+				res = r_io_cache_list (core->io, 0, true);
+			}
+			r_kons_print (core->cons, res);
+			free (res);
 		}
 		break;
 	case 'l': // "wcl"
@@ -1521,7 +1531,11 @@ static int cmd_wc(void *data, const char *input) {
 		}
 		break;
 	case '*': // "wc*"
-		r_io_cache_list (core->io, 1, input[1] == '*');
+		{
+			char *res = r_io_cache_list (core->io, 1, input[1] == '*');
+			r_kons_print (core->cons, res);
+			free (res);
+		}
 		break;
 	case '+': // "wc+"
 		if (input[1] == '+') { // "wc++"
@@ -1589,7 +1603,11 @@ static int cmd_wc(void *data, const char *input) {
 		r_core_block_read (core);
 		break;
 	case 'j': // "wcj"
-		r_io_cache_list (core->io, 2, false);
+		{
+			char *res = r_io_cache_list (core->io, 2, false);
+			r_kons_print (core->cons, res);
+			free (res);
+		}
 		break;
 	case 'p': // "wcp"
 		cmd_write_pcache (core, &input[1]);
@@ -2516,11 +2534,24 @@ static int cmd_write(void *data, const char *input) {
 	case '0': // "w0"
 		cmd_w0 (data, input + 1);
 		break;
-	case '1': // "w1"
-	case '2': // "w2"
-	case '4': // "w4"
-	case '8': // "w8"
-		w_incdec_handler (data, input + 1, *input - '0');
+	case '8':
+		cmd_wx (core, input + 1);
+		break;
+	case 'i':
+		switch (input[1]) {
+		case '1': // "w1"
+		case '2': // "w2"
+		case '4': // "w4"
+		case '8': // "w8"
+			w_incdec_handler (data, input + 2, input[1] - '0');
+			break;
+		case '?':
+			r_core_cmd_help_contains (core, help_msg_w, "wi");
+			break;
+		default:
+			r_core_return_invalid_command (core, "wi", input[1]);
+			break;
+		}
 		break;
 	case '6': // "w6"
 		cmd_w6 (core, input + 1);
