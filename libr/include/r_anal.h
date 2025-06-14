@@ -1475,7 +1475,7 @@ R_API ut64 r_anal_vtable_info_get_size(RVTableContext *context, RVTableInfo *vta
 R_API bool r_anal_vtable_begin(RAnal *anal, RVTableContext *context);
 R_API RVTableInfo *r_anal_vtable_parse_at(RVTableContext *context, ut64 addr);
 R_API RList *r_anal_vtable_search(RVTableContext *context);
-R_API void r_anal_vtables_list(RAnal *anal, int rad);
+R_API char *r_anal_vtables_list(RAnal *anal, int rad);
 
 /* rtti */
 R_API char *r_anal_rtti_msvc_demangle_class_name(RVTableContext *context, const char *name);
@@ -1559,12 +1559,12 @@ R_API RVector/*<RAnalVTable>*/ *r_anal_class_vtable_get_all(RAnal *anal, const c
 R_API RAnalClassErr r_anal_class_vtable_set(RAnal *anal, const char *class_name, RAnalVTable *vtable);
 R_API RAnalClassErr r_anal_class_vtable_delete(RAnal *anal, const char *class_name, const char *vtable_id);
 
-R_API void r_anal_class_print(RAnal *anal, const char *class_name, bool detailed);
+R_API char *r_anal_class_print(RAnal *anal, const char *class_name, bool detailed);
 R_API void r_anal_class_json(RAnal *anal, PJ *j, const char *class_name);
-R_API void r_anal_class_list(RAnal *anal, int mode);
-R_API void r_anal_class_list_bases(RAnal *anal, const char *class_name);
-R_API void r_anal_class_list_vtables(RAnal *anal, const char *class_name);
-R_API void r_anal_class_list_vtable_offset_functions(RAnal *anal, const char *class_name, ut64 offset);
+R_API char *r_anal_class_list(RAnal *anal, int mode);
+R_API char *r_anal_class_list_bases(RAnal *anal, const char *class_name);
+R_API char *r_anal_class_list_vtables(RAnal *anal, const char *class_name);
+R_API char *r_anal_class_list_vtable_offset_functions(RAnal *anal, const char *class_name, ut64 offset);
 R_API RGraph/*<RGraphNodeInfo>*/ *r_anal_class_get_inheritance_graph(RAnal *anal);
 
 R_API RAnalEsilCFG *r_anal_esil_cfg_new(void);

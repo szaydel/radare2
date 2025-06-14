@@ -42,8 +42,9 @@ static RList *__signs(RCoreVisualViewZigns *status, ut64 addr, bool update) {
 }
 
 R_API int __core_visual_view_zigns_update(RCore *core, RCoreVisualViewZigns *status) {
-	int h, w = r_cons_get_size (&h);
-	r_cons_clear00 ();
+	RCons *cons = core->cons;
+	int h, w = r_kons_get_size (cons, &h);
+	r_kons_clear00 (cons);
 	int colh = h -2;
 	int colw = w -1;
 	RList *col0 = __signs (status, status->addr, true);
@@ -51,10 +52,10 @@ R_API int __core_visual_view_zigns_update(RCore *core, RCoreVisualViewZigns *sta
 
 	char *title = r_str_newf ("[r2-visual-signatures] 0x%08"PFMT64x" 0x%08"PFMT64x, status->addr, status->faddr);
 	if (title) {
-		r_cons_print_at (title, 0, 0, w - 1, 2);
+		r_cons_print_at (cons, title, 0, 0, w - 1, 2);
 		free (title);
 	}
-	r_cons_print_at (col0str, 0, 2, colw, colh);
+	r_cons_print_at (cons, col0str, 0, 2, colw, colh);
 	r_list_free (col0);
 	r_cons_flush ();
 	return 0;
@@ -139,8 +140,8 @@ R_API int r_core_visual_view_zigns(RCore *core) {
 			}
 			break;
 		case '?':
-			r_cons_clear00 ();
-			r_cons_printf (
+			r_kons_clear00 (core->cons);
+			r_kons_printf (core->cons,
 			"vbz: Visual Zignatures:\n\n"
 			" jkJK  - scroll up/down\n"
 			" d     - delete current signature\n"
@@ -148,8 +149,8 @@ R_API int r_core_visual_view_zigns(RCore *core) {
 			" q     - quit this visual mode\n"
 			" _     - enter the hud\n"
 			" :     - enter command\n");
-			r_cons_flush ();
-			r_cons_any_key (NULL);
+			r_kons_flush (core->cons);
+			r_cons_any_key (core->cons, NULL);
 			break;
 		case 'q':
 			R_FREE (cur_name);
@@ -159,18 +160,18 @@ R_API int r_core_visual_view_zigns(RCore *core) {
 			char cmd[1024] = {0};
 			r_cons_show_cursor (true);
 			r_kons_set_raw (core->cons, 0);
-			r_line_set_prompt (core->cons, ":> ");
+			r_line_set_prompt (core->cons->line, ":> ");
 			if (r_cons_fgets (core->cons, cmd, sizeof (cmd), 0, NULL) < 0) {
 				cmd[0] = '\0';
 			}
 			cmd[sizeof (cmd) - 1] = 0;
 			r_core_cmd_task_sync (core, cmd, 1);
-			r_cons_set_raw (1);
-			r_cons_show_cursor (false);
+			r_kons_set_raw (core->cons, 1);
+			r_kons_show_cursor (core->cons, false);
 			if (cmd[0]) {
-				r_cons_any_key (NULL);
+				r_cons_any_key (core->cons, NULL);
 			}
-			r_cons_clear ();
+			r_kons_clear (core->cons);
 			}
 			break;
 		}
