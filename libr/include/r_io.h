@@ -131,7 +131,7 @@ typedef struct r_io_cache_t {
 
 typedef struct r_io_t {
 	struct r_io_desc_t *desc; // XXX R2_600 - deprecate... we should use only the fd integer, not hold a weak pointer
-	ut64 off; // XXX maybe deprecate this global seek? also it should be addr, not off
+	ut64 off; // XXX maybe deprecate this global seek? also it should be addr, not off R2_600
 	ut32 bank; // current bank
 	int bits;
 	int va;	// keep it as int, value can be 0, 1 or 2
@@ -567,7 +567,7 @@ R_IPI void r_io_desc_fini(RIO *io);
 /* io/cache.c */
 R_API void r_io_cache_init(RIO *io);
 R_API void r_io_cache_fini(RIO *io);
-R_API void r_io_cache_list(RIO *io, int rad, bool many);
+R_API char *r_io_cache_list(RIO *io, int rad, bool many);
 R_API bool r_io_cache_empty(RIO *io);
 R_API void r_io_cache_reset(RIO *io);
 R_API bool r_io_cache_at(RIO *io, ut64 addr);

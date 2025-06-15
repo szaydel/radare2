@@ -1,4 +1,4 @@
-/* radare - Copyright 2009-2024 - pancake, nibble */
+/* radare - Copyright 2009-2025 - pancake, nibble */
 
 #include "r_core.h"
 #include "r_socket.h"
@@ -123,7 +123,7 @@ static void rtr_textlog_chat(RCore *core, TextLog T) {
 	R_LOG_INFO ("Type '/help' for commands and ^D to quit:");
 	char *oldprompt = strdup (core->cons->line->prompt);
 	snprintf (prompt, sizeof (prompt) - 1, "[%s]> ", me);
-	r_line_set_prompt (core->cons, prompt);
+	r_line_set_prompt (core->cons->line, prompt);
 	ret = rtrcmd (T, msg);
 	for (;;) {
 		if (lastmsg >= 0) {
@@ -155,7 +155,7 @@ static void rtr_textlog_chat(RCore *core, TextLog T) {
 			r_config_set (core->config, "cfg.user", buf+6);
 			me = r_config_get (core->config, "cfg.user");
 			snprintf (prompt, sizeof (prompt) - 1, "[%s]> ", me);
-			r_line_set_prompt (core->cons, prompt);
+			r_line_set_prompt (core->cons->line, prompt);
 			free (m);
 		} else if (!strcmp (buf, "/log")) {
 			char *ret = rtrcmd (T, "T");
@@ -177,7 +177,7 @@ static void rtr_textlog_chat(RCore *core, TextLog T) {
 		}
 	}
 beach:
-	r_line_set_prompt (core->cons, oldprompt);
+	r_line_set_prompt (core->cons->line, oldprompt);
 	free (oldprompt);
 }
 
@@ -186,7 +186,7 @@ R_API int r_core_rtr_http_stop(RCore *u) {
 	const int timeout = 1; // 1 second
 
 #if R2__WINDOWS__
-	r_socket_http_server_set_breaked (&r_cons_context ()->breaked);
+	r_socket_http_server_set_breaked (&core->cons->context->breaked);
 #endif
 	core->http_up = false;
 	if (((size_t)u) > 0xff) {
@@ -978,20 +978,20 @@ static bool r_core_rtr_rap_run(RCore *core, const char *input) {
 	char *file = r_str_newf ("rap://%s", input);
 	int flags = R_PERM_RW;
 	RIODesc *fd = r_io_open_nomap (core->io, file, flags, 0644);
+	RConsContext *c = core->cons->context;
 	if (fd) {
 		if (r_io_is_listener (core->io)) {
 			if (!r_core_serve (core, fd)) {
-				r_cons_context ()->breaked = true;
+				c->breaked = true;
 			}
 			r_io_desc_close (fd);
 			// avoid double free, we are not the owners of this fd so we can't destroy it
 			//r_io_desc_free (fd);
 		}
 	} else {
-		r_cons_context ()->breaked = true;
+		c->breaked = true;
 	}
-	return !r_cons_context ()->breaked;
-	// r_core_cmdf (core, "o rap://%s", input);
+	return !c->breaked;
 }
 
 static RThreadFunctionRet r_core_rtr_rap_thread(RThread *th) {
