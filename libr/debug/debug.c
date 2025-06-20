@@ -1189,10 +1189,6 @@ R_API int r_debug_continue_kill(RDebug *dbg, int sig) {
 	int ret = 0;
 	RBreakpointItem *bp = NULL;
 
-	if (!dbg) {
-		return -1;
-	}
-
 	// If the debugger is not at the end of the changes
 	// Go to the end or the next breakpoint in the changes
 	if (dbg->session && dbg->session->cnum != dbg->session->maxcnum) {
@@ -1595,8 +1591,9 @@ R_API int r_debug_continue_syscalls(RDebug *dbg, int *sc, int n_sc) {
 	}
 	for (;;) {
 		RDebugReasonType reason;
+		RCore *core = (RCore *)dbg->coreb.core;
 
-		if (r_cons_singleton ()->context->breaked) {
+		if (core->cons->context->breaked) {
 			break;
 		}
 #if __linux__

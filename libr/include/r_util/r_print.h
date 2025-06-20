@@ -1,12 +1,11 @@
 #ifndef R2_PRINT_H
 #define R2_PRINT_H
 
-#include "r_types.h"
-#include "r_cons.h"
-#include "r_bind.h"
-#include "r_io.h"
-#include "r_arch.h"
-#include "r_reg.h"
+#include <r_cons.h>
+#include <r_bind.h>
+#include <r_io.h>
+#include <r_arch.h>
+#include <r_reg.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -95,12 +94,12 @@ typedef struct r_print_t {
 	char datefmt[32];
 	int datezone;
 	int (*write)(const unsigned char *buf, int len);
-	PrintfCallback cb_printf;
-	PrintfCallback cb_eprintf;
+	// PrintfCallback oprintf;
+	// PrintfCallback cb_printf;
+	// PrintfCallback cb_eprintf;
 	// char *(*cb_color)(int idx, int last, bool bg);
 	bool scr_prompt;
 	int (*disasm)(void *p, ut64 addr);
-	PrintfCallback oprintf;
 	RArchConfig *config;
 	int width;
 	int limit;
@@ -181,22 +180,24 @@ R_API void r_print_set_is_interrupted_cb(RPrintIsInterruptedCallback cb);
 
 /* ... */
 R_API char *r_print_hexpair(RPrint *p, const char *str, int idx);
+R_API void r_print_printf(const RPrint *p, const char *fmt, ...);
 R_API void r_print_hex_from_bin(RPrint *p, char *bin_str);
 R_API void r_print_bin_from_str(RPrint *p, char *str);
 R_API RPrint *r_print_new(void);
-R_API void r_print_free(RPrint *p);
+R_API void r_print_init(RPrint *p);
+R_API void r_print_free(RPrint * R_NULLABLE p);
+R_API bool r_print_fini(RPrint * R_NONNULL p);
 R_API void r_print_set_flags(RPrint *p, int _flags);
 R_API void r_print_unset_flags(RPrint *p, int flags);
 R_API void r_print_addr(RPrint *p, ut64 addr);
 R_API void r_print_section(RPrint *p, ut64 at);
-R_API void r_print_columns(RPrint *p, const ut8 *buf, int len, int height);
+R_API char *r_print_columns(RPrint *p, const ut8 *buf, int len, int height);
 R_API void r_print_hexii(RPrint *p, ut64 addr, const ut8 *buf, int len, int step);
 R_API void r_print_hexdump(RPrint *p, ut64 addr, const ut8 *buf, int len, int base, int step, size_t zoomsz);
 R_API void r_print_hexdump_simple(const ut8 *buf, int len);
 R_API int r_print_jsondump(RPrint *p, const ut8 *buf, int len, int wordsize);
-R_API void r_print_hexpairs(RPrint *p, ut64 addr, const ut8 *buf, int len);
 R_API void r_print_hexdiff(RPrint *p, ut64 aa, const ut8* a, ut64 ba, const ut8 *b, int len, int scndcol);
-R_API void r_print_bytes(RPrint *p, const ut8* buf, int len, const char *fmt);
+R_API void r_print_bytes(RPrint *p, const ut8* buf, int len, const char *fmt, const char sep);
 R_API void r_print_fill(RPrint *p, const ut8 *arr, int size, ut64 addr, int step);
 R_API void r_print_byte(RPrint *p, ut64 addr, const char *fmt, int idx, ut8 ch);
 R_API const char *r_print_byte_color(RPrint *p, ut64 addr, int ch);
@@ -234,7 +235,6 @@ typedef struct r_print_format_t {
 	int oldslide;
 	int ident;
 	// RStrBuf *sb to hold a string for plaintext formats
-	// indentlevel (or nestlevel)
 } RPrintFormat;
 
 R_API int r_print_format_struct_size(RPrint *p, const char *format, int mode, int n);
@@ -284,6 +284,7 @@ R_API ut32 r_print_rowoff(RPrint *p, int i);
 R_API void r_print_set_rowoff(RPrint *p, int i, ut32 offset, bool overwrite);
 R_API int r_print_row_at_off(RPrint *p, ut32 offset);
 R_API void r_print_pie(RPrint *p, int nvalues, int *values, const char **text, int size);
+R_API char *r_print_treemap(int n, int *values, const char **labels, int width, int height);
 R_API void r_print_graphline(RPrint *print, const ut8 *buf, size_t len);
 
 // WIP
@@ -291,7 +292,7 @@ R_API char *r_print_unpack7bit(const char *src);
 R_API char *r_print_pack7bit(const char *src);
 R_API char *r_print_stereogram_bytes(const ut8 *buf, int len);
 R_API char *r_print_stereogram(const char *bump, int w, int h);
-R_API void r_print_stereogram_print(RPrint *p, const char *buf);
+R_API char *r_print_stereogram_render(RPrint *p, const char *buf);
 R_API void r_print_set_screenbounds(RPrint *p, ut64 addr);
 R_API int r_util_lines_getline(ut64 *lines_cache, int lines_cache_sz, ut64 off);
 R_API char* r_print_json_indent(const char* s, bool color, const char *tab, const char **colors);

@@ -62,12 +62,12 @@ typedef enum {
 	DOWN
 } Direction;
 
-static const char *panels_dynamic [] = {
+static const char *panels_dynamic[] = {
 	"Disassembly", "Stack", "Registers",
 	NULL
 };
 
-static const char *panels_static [] = {
+static const char *panels_static[] = {
 	"Disassembly", "Functions", "Symbols",
 	NULL
 };
@@ -94,7 +94,7 @@ static const char *menus_ReOpen[] = {
 };
 
 static const char *menus_loadLayout[] = {
-	"Saved", "Default",
+	"Saved..", "Default",
 	NULL
 };
 
@@ -499,9 +499,10 @@ static int __show_status(RCore *core, const char *msg) {
 }
 
 static bool __show_status_yesno(RCore *core, int def, const char *msg) {
-	r_kons_gotoxy (core->cons, 0, 0);
-	r_kons_flush (core->cons);
-	return r_cons_yesno (def, R_CONS_CLEAR_LINE"%s[Status] %s"Color_RESET, PANEL_HL_COLOR, msg);
+	RCons *cons = core->cons;
+	r_kons_gotoxy (cons, 0, 0);
+	r_kons_flush (cons);
+	return r_kons_yesno (cons, def, R_CONS_CLEAR_LINE"%s[Status] %s"Color_RESET, PANEL_HL_COLOR, msg);
 }
 
 static char *__show_status_input(RCore *core, const char *msg) {
@@ -689,11 +690,11 @@ static void bottom_panel_line(RCore *core) {
 	const char *br_corner = useUtf8 ? (useUtf8Curvy ? RUNE_CURVE_CORNER_BR : RUNE_CORNER_BR) : "'";
 	int i, h, w = r_cons_get_size (&h);
 	r_cons_gotoxy (0, h - 1);
-	r_cons_write (bl_corner, strlen (bl_corner));
+	r_kons_write (core->cons, bl_corner, strlen (bl_corner));
 	for (i = 0; i < w - 2; i++) {
-		r_cons_printf ("%s", hline);
+		r_kons_printf (core->cons, "%s", hline);
 	}
-	r_cons_write (br_corner, strlen (br_corner));
+	r_kons_write (core->cons, br_corner, strlen (br_corner));
 }
 
 static void __handlePrompt(RCore *core, RPanels *panels) {
@@ -1168,8 +1169,7 @@ static void __set_curnode(RCore *core, int idx) {
 static bool __check_panel_num(RCore *core) {
 	RPanels *panels = core->panels;
 	if (panels->n_panels + 1 > PANEL_NUM_LIMIT) {
-		const char *msg = "panel limit exceeded";
-		(void)__show_status (core, msg);
+		(void)__show_status (core, "panel limit exceeded");
 		return false;
 	}
 	return true;
@@ -2242,7 +2242,7 @@ static void __step_modal_cb(void *user, R_UNUSED RPanel *panel, R_UNUSED const R
 }
 
 static void __panel_prompt(RCore *core, const char *prompt, char *buf, int len) {
-	r_line_set_prompt (core->cons, prompt);
+	r_line_set_prompt (core->cons->line, prompt);
 	*buf = 0;
 	r_cons_fgets (core->cons, buf, len, 0, NULL);
 }
@@ -2475,9 +2475,8 @@ static void __init_all_dbs(RCore *core) {
 }
 
 static RConsCanvas *__create_new_canvas(RCore *core, int w, int h) {
-	RConsCanvas *can = r_cons_canvas_new (w, h);
+	RConsCanvas *can = r_cons_canvas_new (core->cons, w, h, -2);
 	if (!can) {
-		R_LOG_ERROR ("Cannot create RCons.canvas context");
 		return false;
 	}
 	r_cons_canvas_fill (can, 0, 0, w, h, ' ');
@@ -2746,7 +2745,7 @@ static void __handleComment(RCore *core) {
 	}
 	char buf[4095];
 	char *cmd = NULL;
-	r_line_set_prompt (core->cons, "[Comment]> ");
+	r_line_set_prompt (core->cons->line, "[Comment]> ");
 	if (r_cons_fgets (core->cons, buf, sizeof (buf), 0, NULL) > 0) {
 		ut64 addr, orig;
 		addr = orig = core->addr;
@@ -3871,7 +3870,7 @@ static bool __drag_and_resize(RCore *core) {
 	RPanels *panels = core->panels;
 	if (panels->mouse_on_edge_x || panels->mouse_on_edge_y) {
 		int x, y;
-		if (r_cons_get_click (&x, &y)) {
+		if (r_cons_get_click (core->cons, &x, &y)) {
 			y -= r_config_get_i (core->config, "scr.notch");
 			if (panels->mouse_on_edge_x) {
 				__update_edge_x (core, x - panels->mouse_orig_x);
@@ -4218,7 +4217,7 @@ static void __create_modal(RCore *core, RPanel *panel, Sdb *menu_db) {
 		key = r_cons_arrow_to_hjkl (core->cons, okey);
 		word = NULL;
 		if (key == INT8_MAX - 1) {
-			if (r_cons_get_click (&cx, &cy)) {
+			if (r_cons_get_click (core->cons, &cx, &cy)) {
 				cy -= r_config_get_i (core->config, "scr.notch");
 				if ((cx < x || x + w < cx) || ((cy < y || y + h < cy))) {
 					key = 'q';
@@ -4374,7 +4373,7 @@ static bool __handle_mouse(RCore *core, RPanel *panel, int *key) {
 	}
 	if (key && !*key) {
 		int x, y;
-		if (!r_cons_get_click (&x, &y)) {
+		if (!r_cons_get_click (core->cons, &x, &y)) {
 			return false;
 		}
 		y -= r_config_get_i (core->config, "scr.notch");
@@ -4607,11 +4606,11 @@ static void __swap_panels(RPanels *panels, int p0, int p1) {
 static bool __check_func(RCore *core) {
 	RAnalFunction *fun = r_anal_get_fcn_in (core->anal, core->addr, R_ANAL_FCN_TYPE_NULL);
 	if (!fun) {
-		r_cons_message ("Not in a function. Type 'df' to define it here");
+		r_cons_message (core->cons, "Not in a function. Type 'df' to define it here");
 		return false;
 	}
 	if (r_list_empty (fun->bbs)) {
-		r_cons_message ("No basic blocks in this function. You may want to use 'afb+'.");
+		r_cons_message (core->cons, "No basic blocks in this function. You may want to use 'afb+'.");
 		return false;
 	}
 	return true;
@@ -4920,20 +4919,20 @@ static void __print_snow(RPanels *panels) {
 						fall = false;
 						if (is_down_right) {
 							if (!is_down_left) {
-								snow->x --;
-								snow->y --;
+								snow->x--;
+								snow->y--;
 								fall = true;
 							}
 						} else {
 							if (is_down_left) {
-								snow->x ++;
-								snow->y --;
+								snow->x++;
+								snow->y--;
 								fall = true;
 							}
 						}
 						if (!fall) {
 							snow->stuck = true;
-							snow->y --;
+							snow->y--;
 						}
 						goto print_this_snow;
 					}
@@ -5222,7 +5221,16 @@ static void __update_menu(RCore *core, const char *parent, R_NULLABLE RPanelMenu
 	__update_menu_contents (core, menu, p_item);
 }
 
-static char *__get_panels_config_dir_path(void) {
+static char *__panels_config_path(bool syspath) {
+	if (syspath) {
+		char *r2_prefix = r_sys_getenv ("R2_PREFIX");
+		if (!r2_prefix) {
+			r2_prefix = strdup (R2_PREFIX);
+		}
+		char *res = r_file_new (r2_prefix, "share", "radare2", R2_VERSION, "panels", NULL);
+		free (r2_prefix);
+		return res;
+	}
 	return r_xdg_datadir ("r2panels");
 }
 
@@ -5266,19 +5274,42 @@ static void __add_menu(RCore *core, const char *parent, const char *name, RPanel
 }
 
 static void __init_menu_saved_layout(void *_core, const char *parent) {
-	char *dir_path = __get_panels_config_dir_path ();
+	char *dir_path = __panels_config_path (false);
 	RList *dir = r_sys_dir (dir_path);
-	if (!dir) {
-		free (dir_path);
-		return;
-	}
 	RCore *core = (RCore *)_core;
 	RListIter *it;
-	char *entry;
-	r_list_foreach (dir, it, entry) {
-		if (strcmp (entry, ".") && strcmp (entry, "..")) {
-			__add_menu (core, parent, entry, __load_layout_saved_cb);
+	char *entry, *entry2;
+	if (dir) {
+		r_list_foreach (dir, it, entry) {
+			if (*entry != '.') {
+				__add_menu (core, parent, entry, __load_layout_saved_cb);
+			}
 		}
+	}
+	char *sysdir_path = __panels_config_path (true);
+	RList *sysdir = r_sys_dir (sysdir_path);
+	if (sysdir) {
+		bool found_in_home;
+		// load entries from syspath
+		r_list_foreach (sysdir, it, entry) {
+			if (*entry != '.') {
+				found_in_home = false;
+				if (dir) {
+					RListIter *it2;
+					r_list_foreach (dir, it2, entry2) {
+						if (!strcmp (entry, entry2)) {
+							found_in_home = true;
+							break;
+						}
+					}
+				}
+				if (!found_in_home) {
+					__add_menu (core, parent, entry, __load_layout_saved_cb);
+				}
+			}
+		}
+		r_list_free (sysdir);
+		free (sysdir_path);
 	}
 	r_list_free (dir);
 	free (dir_path);
@@ -5286,10 +5317,10 @@ static void __init_menu_saved_layout(void *_core, const char *parent) {
 
 static int __clear_layout_cb(void *user) {
 	RCore *core = (RCore *)user;
-	if (!__show_status_yesno (core, 0, "Clear all the saved layouts?(y/n): ")) {
+	if (!__show_status_yesno (core, 0, "Clear all the saved layouts? (y/n): ")) {
 		return 0;
 	}
-	char *dir_path = __get_panels_config_dir_path ();
+	char *dir_path = __panels_config_path (false);
 	RList *dir = r_sys_dir ((const char *)dir_path);
 	if (!dir) {
 		free (dir_path);
@@ -5306,7 +5337,7 @@ static int __clear_layout_cb(void *user) {
 	r_list_free (dir);
 	free (dir_path);
 
-	__update_menu (core, "Settings.Load Layout.Saved", __init_menu_saved_layout);
+	__update_menu (core, "Settings.Load Layout.Saved..", __init_menu_saved_layout);
 	return 0;
 }
 
@@ -5640,7 +5671,7 @@ static int __references_cb(void *user) {
 static int __fortune_cb(void *user) {
 	RCore *core = (RCore *)user;
 	char *s = r_core_cmd_str (core, "fo");
-	r_cons_message (s);
+	r_cons_message (core->cons, s);
 	free (s);
 	return 0;
 }
@@ -5658,7 +5689,8 @@ static int __help_cb(void *user) {
 }
 
 static int __license_cb(void *user) {
-	r_cons_message ("Copyright 2006-2024 - pancake - LGPL");
+	RCore *core = (RCore *)user;
+	r_cons_message (core->cons, "Copyright 2006-2024 - pancake - LGPL");
 	return 0;
 }
 
@@ -5676,7 +5708,7 @@ static int __version2_cb(void *user) {
 static int __version_cb(void *user) {
 	RCore *core = (RCore *)user;
 	char *s = r_core_cmd_str (core, "?V");
-	r_cons_message (s);
+	r_cons_message (core->cons, s);
 	free (s);
 	return 0;
 }
@@ -6058,14 +6090,14 @@ static bool __init_panels_menu(RCore *core) {
 	parent = "Settings.Load Layout";
 	for (i = 0; menus_loadLayout[i]; i++) {
 		const char *menu = menus_loadLayout[i];
-		if (!strcmp (menu, "Saved")) {
+		if (!strcmp (menu, "Saved..")) {
 			__add_menu (core, parent, menu, __open_menu_cb);
 		} else if (!strcmp (menu, "Default")) {
 			__add_menu (core, parent, menu, __load_layout_default_cb);
 		}
 	}
 
-	__init_menu_saved_layout (core, "Settings.Load Layout.Saved");
+	__init_menu_saved_layout (core, "Settings.Load Layout.Saved..");
 	__init_menu_color_settings_layout (core, "Settings.Color Themes...");
 	__init_menu_manpages (core, "Help.Manpages...");
 
@@ -6326,9 +6358,11 @@ static void __panels_refresh(RCore *core) {
 	}
 	show_cursor (core);
 	r_kons_flush (core->cons);
-	if (r_cons_singleton ()->fps) {
+#if 0
+	if (core->cons->fps) {
 		r_cons_print_fps (40);
 	}
+#endif
 }
 
 static void __panel_breakpoint(RCore *core) {
@@ -6496,7 +6530,7 @@ static bool __handle_console(RCore *core, RPanel *panel, const int key) {
 }
 
 static char *__create_panels_config_path(const char *file) {
-	char *dir_path = __get_panels_config_dir_path ();
+	char *dir_path = __panels_config_path (false);
 	r_sys_mkdirp (dir_path);
 	char *file_path = r_str_newf (R_JOIN_2_PATHS ("%s", "%s"), dir_path, file);
 	R_FREE (dir_path);
@@ -6504,11 +6538,18 @@ static char *__create_panels_config_path(const char *file) {
 }
 
 static char *__get_panels_config_file_from_dir(const char *file) {
-	char *dir_path = __get_panels_config_dir_path ();
+	char *dir_path = __panels_config_path (false);
 	RList *dir = r_sys_dir (dir_path);
 	if (!dir_path || !dir) {
 		free (dir_path);
-		return NULL;
+		dir_path = __panels_config_path (true);
+		r_list_free (dir);
+		dir = r_sys_dir (dir_path);
+		if (!dir || !dir_path) {
+			free (dir_path);
+			r_list_free (dir);
+			return NULL;
+		}
 	}
 	char *tmp = NULL;
 	RListIter *it;
@@ -6563,7 +6604,7 @@ R_API void r_core_panels_save(RCore *core, const char *oname) {
 		fprintf (fd, "%s\n", pjs);
 		free (pjs);
 		fclose (fd);
-		__update_menu (core, "Settings.Load Layout.Saved", __init_menu_saved_layout);
+		__update_menu (core, "Settings.Load Layout.Saved..", __init_menu_saved_layout);
 		(void)__show_status (core, "Panels layout saved!");
 	} else {
 		pj_free (pj);
@@ -7356,7 +7397,7 @@ virtualmouse:
 	case 0x0d: // "\\n"
 		if (r_config_get_b (core->config, "scr.cursor")) {
 			key = 0;
-			r_cons_set_click (core->cons->cpos.x, core->cons->cpos.y);
+			r_cons_set_click (core->cons, core->cons->cpos.x, core->cons->cpos.y);
 			goto virtualmouse;
 		} else {
 			__toggle_zoom_mode (core);
