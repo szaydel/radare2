@@ -227,7 +227,7 @@ static void cmd_open_bin(RCore *core, const char *input) {
 	case '*': // "ob*"
 		r_core_bin_list (core, input[1]);
 		if (input[1] == 'j') {
-			r_cons_newline ();
+			r_cons_newline (core->cons);
 		}
 		break;
 	case '.': // "ob."
@@ -242,7 +242,7 @@ static void cmd_open_bin(RCore *core, const char *input) {
 			}
 			RBinFile *bf = r_bin_file_at (core->bin, at);
 			if (bf) {
-				r_cons_printf ("%d\n", bf->id);
+				r_cons_printf (core->cons, "%d\n", bf->id);
 			}
 		}
 		break;
@@ -478,10 +478,10 @@ static void cmd_open_bin(RCore *core, const char *input) {
 			}
 			RTable *table = r_core_table_new (core, "bins");
 			r_table_visual_list (table, list, core->addr, core->blocksize,
-				r_cons_get_size (NULL), r_config_get_i (core->config, "scr.color"));
+				r_cons_get_size (core->cons, NULL), r_config_get_i (core->config, "scr.color"));
 			char *table_text = r_table_tostring (table);
 			if (table_text) {
-				r_cons_printf ("\n%s\n", table_text);
+				r_cons_printf (core->cons, "\n%s\n", table_text);
 				r_free (table_text);
 			}
 			r_table_free (table);
@@ -494,10 +494,10 @@ static void cmd_open_bin(RCore *core, const char *input) {
 }
 
 // TODO: discuss the output format
-static void map_list(RCore *core, int mode, RPrint *print, int fd) {
+static void map_list(RCore *core, int mode, RPrint *p, int fd) {
 	RIO *io = core->io;
 	ut64 off = core->addr;
-	R_RETURN_IF_FAIL (io && print && print->cb_printf);
+	R_RETURN_IF_FAIL (io && p);
 	PJ *pj = NULL;
 	if (mode == 'j') {
 		pj = r_core_pj_new (core);
@@ -524,9 +524,9 @@ static void map_list(RCore *core, int mode, RPrint *print, int fd) {
 		switch (mode) {
 		case 'q':
 			if (fd == -2) {
-				print->cb_printf ("0x%08"PFMT64x"\n", r_io_map_begin (map));
+				r_print_printf (p, "0x%08"PFMT64x"\n", r_io_map_begin (map));
 			} else {
-				print->cb_printf ("%d %d\n", map->fd, map->id);
+				r_print_printf (p, "%d %d\n", map->fd, map->id);
 			}
 			break;
 		case 'j':
@@ -546,7 +546,7 @@ static void map_list(RCore *core, int mode, RPrint *print, int fd) {
 		case 'r': {
 			if (fd == -3) {
 				char *name = map->name? strdup (map->name): r_str_newf ("fd%d", map->fd);
-				print->cb_printf ("f iomap.%s=0x%"PFMT64x"\n",
+				r_print_printf (p, "f iomap.%s=0x%"PFMT64x"\n",
 						name, r_io_map_begin (map));
 				free (name);
 				break;
@@ -563,7 +563,7 @@ static void map_list(RCore *core, int mode, RPrint *print, int fd) {
 			break;
 		}
 		default:
-			print->cb_printf ("%c%2d fd: %i +0x%08"PFMT64x" 0x%08"PFMT64x
+			r_print_printf (p, "%c%2d fd: %i +0x%08"PFMT64x" 0x%08"PFMT64x
 					" - 0x%08"PFMT64x" %s%s%s\n",
 					(check_for_current_map && r_io_map_contain (map, off)) ?
 					'*' : '-', map->id, map->fd, map->delta, r_io_map_begin (map),
@@ -574,12 +574,12 @@ static void map_list(RCore *core, int mode, RPrint *print, int fd) {
 		}
 	}
 	if (om_cmds) {
-		print->cb_printf ("%s", om_cmds);
+		r_print_printf (p, "%s", om_cmds);
 		free (om_cmds);
 	}
 	if (mode == 'j') {
 		pj_end (pj);
-		print->cb_printf ("%s\n", pj_string (pj));
+		r_print_printf (p, "%s\n", pj_string (pj));
 		pj_free (pj);
 	}
 }
@@ -720,7 +720,7 @@ static void cmd_omcomma(RCore *core, const char *arg) {
 	} while (r_id_storage_get_next (&core->io->maps, &mapid));
 	if (r_table_query (t, arg)) {
 		char *ts = r_table_tostring (t);
-		r_cons_printf ("%s", ts);
+		r_cons_printf (core->cons, "%s", ts);
 		free (ts);
 	}
 	r_table_free (t);
@@ -854,17 +854,17 @@ static void cmd_oma(RCore *core, const char *input) {
 	switch (input[2]) {
 	case '?':
 		r_core_cmd_help_match (core, help_msg_om, "oma");
-		r_cons_print ("Type: ");
-		r_cons_println ("heap, stack, mmap, mmio, dma, jit, bss, shared, kernel, guard, null, gpu, tls, buffer, cow, pagetables");
-		r_cons_print ("Flags: ");
-		r_cons_println ("paged, private, persistent, aslr, swap, dep, enclave, compressed, encrypted, large");
+		r_cons_print (core->cons, "Type: ");
+		r_cons_println (core->cons, "heap, stack, mmap, mmio, dma, jit, bss, shared, kernel, guard, null, gpu, tls, buffer, cow, pagetables");
+		r_cons_print (core->cons, "Flags: ");
+		r_cons_println (core->cons, "paged, private, persistent, aslr, swap, dep, enclave, compressed, encrypted, large");
 		break;
 	case 0:
 		{
 			RIOMap *map = r_io_map_get_at (core->io, core->addr);
 			if (map) {
 				char *s = r_io_map_getattr (map);
-				r_cons_println (s);
+				r_cons_println (core->cons, s);
 				free (s);
 			}
 		}
@@ -889,7 +889,7 @@ static void cmd_oma(RCore *core, const char *input) {
 				RIOMap *map = r_io_map_get_at (core->io, core->addr);
 				if (map) {
 					char *s = r_io_map_getattr (map);
-					r_cons_println (s);
+					r_cons_println (core->cons, s);
 					free (s);
 				} else {
 					R_LOG_ERROR ("Cannot find map in the current offset");
@@ -912,7 +912,7 @@ static void cmd_oma(RCore *core, const char *input) {
 			RIOMap *map = r_io_map_get_at (core->io, core->addr);
 			if (map) {
 				char *s = r_io_map_getattr (map);
-				r_cons_println (s);
+				r_cons_println (core->cons, s);
 				free (s);
 			} else {
 				R_LOG_ERROR ("Cannot find map in the current offset");
@@ -950,7 +950,7 @@ static void cmd_open_banks(RCore *core, int argc, char *argv[]) {
 		if (argc != 1) {
 			R_LOG_ERROR ("ombq takes no arguments");
 		} else {
-			r_cons_printf ("%d\n", core->io->bank);
+			r_cons_printf (core->cons, "%d\n", core->io->bank);
 		}
 		break;
 	case 'a': // "omba"
@@ -1058,7 +1058,7 @@ static void cmd_open_banks(RCore *core, int argc, char *argv[]) {
 			} while (r_id_storage_get_next (&core->io->banks, &bank_id));
 			pj_end (pj);
 			char *s = pj_drain (pj);
-			r_cons_println (s);
+			r_cons_println (core->cons, s);
 			free (s);
 		} else {
 			R_LOG_ERROR ("ombj takes no arguments");
@@ -1073,13 +1073,13 @@ static void cmd_open_banks(RCore *core, int argc, char *argv[]) {
 			do {
 				RIOBank *bank = r_id_storage_get (&core->io->banks, bank_id);
 				const char ch = core->io->bank == bank_id? '*': '-';
-				r_cons_printf ("%c %d %s [", ch, bank->id, bank->name);
+				r_cons_printf (core->cons, "%c %d %s [", ch, bank->id, bank->name);
 				RIOMapRef *mapref;
 				RListIter *iter;
 				r_list_foreach (bank->maprefs, iter, mapref) {
-					r_cons_printf (" %d", mapref->id);
+					r_cons_printf (core->cons, " %d", mapref->id);
 				}
-				r_cons_printf (" ]\n");
+				r_cons_printf (core->cons, " ]\n");
 				// list all the associated maps
 			} while (r_id_storage_get_next (&core->io->banks, &bank_id));
 		} else {
@@ -1117,19 +1117,19 @@ static void overlay_print_diff_pj_cb(RInterval itv, const ut8 *m_data, const ut8
 }
 
 static void overlay_print_diff_r2_cb(RInterval itv, const ut8 *m_data, const ut8 *o_data, void *user) {
-//	RCore *core = user;
+	RCore *core = (RCore *)user;
 	// char *m_hex = r_hex_bin2strdup (m_data, r_itv_size (itv));
 	char *o_hex = r_hex_bin2strdup (o_data, r_itv_size (itv));
-	r_cons_printf ("'@0x%08"PFMT64x"'wx %s\n", r_itv_begin (itv), o_hex);
+	r_cons_printf (core->cons, "'@0x%08"PFMT64x"'wx %s\n", r_itv_begin (itv), o_hex);
 	// free (m_hex);
 	free (o_hex);
 }
 
 static void overlay_print_diff_cb(RInterval itv, const ut8 *m_data, const ut8 *o_data, void *user) {
-//	RCore *core = user;
+	RCore *core = (RCore *)user;
 	char *m_hex = r_hex_bin2strdup (m_data, r_itv_size (itv));
 	char *o_hex = r_hex_bin2strdup (o_data, r_itv_size (itv));
-	r_cons_printf ("0x%08"PFMT64x": %s => %s\n", r_itv_begin (itv), m_hex, o_hex);
+	r_cons_printf (core->cons, "0x%08"PFMT64x": %s => %s\n", r_itv_begin (itv), m_hex, o_hex);
 	free (m_hex);
 	free (o_hex);
 }
@@ -1162,17 +1162,17 @@ static void cmd_open_map(RCore *core, const char *input) {
 				pj_ks (pj, "name", r_str_get (map->name));
 				pj_end (pj);
 
-				core->print->cb_printf ("%s\n", pj_string (pj));
+				r_cons_printf (core->cons, "%s\n", pj_string (pj));
 
 				pj_free (pj);
 			} else {
-				core->print->cb_printf ("%2d fd: %i +0x%08"PFMT64x" 0x%08"PFMT64x
+				r_cons_printf (core->cons, "%2d fd: %i +0x%08"PFMT64x" 0x%08"PFMT64x
 					" - 0x%08"PFMT64x" %s %s\n", map->id, map->fd,
 					map->delta, r_io_map_begin (map), r_io_map_to (map),
 					r_str_rwx_i (map->perm), r_str_get (map->name));
 			}
 		} else if (input[2] == 'j') {
-			r_cons_println ("{}");
+			r_cons_println (core->cons, "{}");
 		}
 		break;
 	case 's': // "oms"
@@ -1181,7 +1181,7 @@ static void cmd_open_map(RCore *core, const char *input) {
 		} else if (input[2] != ' ') {
 			RIOMap *map = r_io_map_get_at (core->io, core->addr);
 			if (map) {
-				r_cons_printf ("%"PFMT64d"\n", r_itv_size (map->itv));
+				r_cons_printf (core->cons, "%"PFMT64d"\n", r_itv_size (map->itv));
 			}
 		} else {
 			const char *p = strchr (input + 3, ' ');
@@ -1247,7 +1247,7 @@ static void cmd_open_map(RCore *core, const char *input) {
 			if (pj) {
 				pj_end (pj);
 				char *s = pj_drain (pj);
-				r_cons_println (s);
+				r_cons_println (core->cons, s);
 				free (s);
 			}
 		} else {
@@ -1302,7 +1302,7 @@ static void cmd_open_map(RCore *core, const char *input) {
 				RIOMap *map = r_io_map_get_at (core->io, core->addr);
 				if (map) {
 					const char *sperm = r_str_rwx_i (map->perm);
-					r_cons_println (sperm);
+					r_cons_println (core->cons, sperm);
 				}
 			}
 			break;
@@ -1331,7 +1331,7 @@ static void cmd_open_map(RCore *core, const char *input) {
 					r_io_map_del_name (map);
 					break;
 				case 0:
-					r_cons_printf ("%s\n", map->name);
+					r_cons_printf (core->cons, "%s\n", map->name);
 					break;
 				case ' ':
 					r_io_map_set_name (map, r_str_trim_head_ro (input + 3));
@@ -1482,7 +1482,7 @@ static void cmd_open_map(RCore *core, const char *input) {
 			{
 				RIOMap *map = r_io_map_get_at (core->io, core->addr);
 				if (map) {
-					r_cons_println (r_str_rwx_i (map->perm));
+					r_cons_println (core->cons, r_str_rwx_i (map->perm));
 				}
 			}
 			break;
@@ -1503,7 +1503,7 @@ static void cmd_open_map(RCore *core, const char *input) {
 		} else if (input[1] && input[2] == '.') {
 			map = r_io_map_get_at (core->io, core->addr);
 			if (map) {
-				core->print->cb_printf ("%i\n", map->id);
+				r_cons_printf (core->cons, "%i\n", map->id);
 			}
 		} else {
 			if (input[1] && input[2] == 'q') { // "omqq"
@@ -1538,10 +1538,10 @@ static void cmd_open_map(RCore *core, const char *input) {
 		}
 		RTable *table = r_core_table_new (core, "maps");
 		r_table_visual_list (table, list, core->addr, core->blocksize,
-			r_cons_get_size (NULL), r_config_get_i (core->config, "scr.color"));
+			r_cons_get_size (core->cons, NULL), r_config_get_i (core->config, "scr.color"));
 		char *tablestr = r_table_tostring (table);
 		if (tablestr) {
-			r_cons_printf ("\n%s\n", tablestr);
+			r_cons_printf (core->cons, "\n%s\n", tablestr);
 			free (tablestr);
 		}
 		r_table_free (table);
@@ -1845,23 +1845,25 @@ static bool init_desc_list_visual_cb(void *user, void *data, ut32 id) {
 }
 
 static bool desc_list_visual_cb(void *user, void *data, ut32 id) {
-	RPrint *p = (RPrint *)user;
+	RCore *core = (RCore *)user;
+	RPrint *p = core->print;
 	RIODesc *desc = (RIODesc *)data;
 	ut64 sz = r_io_desc_size (desc);
-	r_cons_printf ("%2d %c %s 0x%08"PFMT64x" ", desc->fd,
+	r_cons_printf (core->cons, "%2d %c %s 0x%08"PFMT64x" ", desc->fd,
 			(desc->io && (desc->io->desc == desc)) ? '*' : '-', r_str_rwx_i (desc->perm), sz);
 	int flags = p->flags;
 	p->flags &= ~R_PRINT_FLAGS_HEADER;
-	r_print_progressbar (p, sz * 100 / fdsz, r_cons_get_size (NULL) - 40, NULL);
+	const int percent = (fdsz > 0) ? (sz * 100) / fdsz: 0;
+	r_print_progressbar (p, percent, r_cons_get_size (core->cons, NULL) - 40, NULL);
 	p->flags = flags;
-	r_cons_printf (" %s\n", desc->uri);
+	r_cons_printf (core->cons, " %s\n", desc->uri);
 #if 0
 	RIOMap *map;
 	SdbListIter *iter;
 	if (desc->io && desc->io->va && desc->io->maps) {
 		ls_foreach_prev (desc->io->maps, iter, map) {
 			if (map->fd == desc->fd) {
-				p->cb_printf ("  +0x%"PFMT64x" 0x%"PFMT64x
+				r_print_printf (p, "  +0x%"PFMT64x" 0x%"PFMT64x
 					" - 0x%"PFMT64x" : %s : %s : %s\n", map->delta,
 					map->from, map->to, r_str_rwx_i (map->flags), "",
 					r_str_get (map));
@@ -1875,14 +1877,14 @@ static bool desc_list_visual_cb(void *user, void *data, ut32 id) {
 static bool desc_list_quiet2_cb(void *user, void *data, ut32 id) {
 	RPrint *p = (RPrint *)user;
 	RIODesc *desc = (RIODesc *)data;
-	p->cb_printf ("%d\n", desc->fd);
+	r_print_printf (p, "%d\n", desc->fd);
 	return false;
 }
 
 static bool desc_list_quiet_cb(void *user, void *data, ut32 id) {
 	RPrint *p = (RPrint *)user;
 	RIODesc *desc = (RIODesc *)data;
-	p->cb_printf ("%d\n", desc->fd);
+	r_print_printf (p, "%d\n", desc->fd);
 	return true;
 }
 
@@ -1892,7 +1894,7 @@ static bool desc_list_cmds_cb2(void *user, void *data, ut32 id) {
 	RIODesc *desc = (RIODesc*)data;
 	char *name = strdup (desc->name);
 	r_name_filter (name, -1);
-	p->cb_printf ("f fd.%s=%d\n", name, desc->fd);
+	r_print_printf (p, "f fd.%s=%d\n", name, desc->fd);
 	free (name);
 	return true;
 }
@@ -1905,14 +1907,14 @@ static bool desc_list_cmds_cb(void *user, void *data, ut32 id) {
 	if (bf) {
 		if (r_config_get_b (core->config, "prj.files") && *r_config_get (core->config, "prj.name")) {
 			const char *buri = strstr (desc->uri, "://")? desc->uri: r_file_basename (desc->uri);
-			p->cb_printf ("pushd %s/%s\n", r_config_get (core->config, "dir.projects"), r_config_get (core->config, "prj.name"));
-			p->cb_printf ("o \"%s\" 0x%08"PFMT64x" %s\n", buri, bf->bo->baddr, r_str_rwx_i (desc->perm));
-			p->cb_printf ("popd\n");
+			r_print_printf (p, "pushd %s/%s\n", r_config_get (core->config, "dir.projects"), r_config_get (core->config, "prj.name"));
+			r_print_printf (p, "o \"%s\" 0x%08"PFMT64x" %s\n", buri, bf->bo->baddr, r_str_rwx_i (desc->perm));
+			r_print_printf (p, "popd\n");
 		} else {
-			p->cb_printf ("o \"%s\" 0x%08"PFMT64x" %s\n", desc->uri, bf->bo->baddr, r_str_rwx_i (desc->perm));
+			r_print_printf (p, "o \"%s\" 0x%08"PFMT64x" %s\n", desc->uri, bf->bo->baddr, r_str_rwx_i (desc->perm));
 		}
 	} else {
-		p->cb_printf ("onnu %s %s\n", desc->uri, r_str_rwx_i (desc->perm));
+		r_print_printf (p, "onnu %s %s\n", desc->uri, r_str_rwx_i (desc->perm));
 	}
 	if (strstr (desc->uri, "null://")) {
 		// null descs dont want to be mapped
@@ -1948,7 +1950,7 @@ static bool desc_list_cmds_cb(void *user, void *data, ut32 id) {
 			ut64 vaddr = map->itv.addr + map->delta;
 			ut64 vsize = map->itv.size;
 			if (vsize > 0) {
-				p->cb_printf ("om $d 0x%08"PFMT64x" 0x%08"PFMT64x" 0x%08"PFMT64x" %s %s\n",
+				r_print_printf (p, "om $d 0x%08"PFMT64x" 0x%08"PFMT64x" 0x%08"PFMT64x" %s %s\n",
 						vaddr, vsize, paddr, r_str_rwx_i (map->perm), r_str_get (map->name));
 			}
 		}
@@ -1958,7 +1960,7 @@ static bool desc_list_cmds_cb(void *user, void *data, ut32 id) {
 static bool desc_list_cb(void *user, void *data, ut32 id) {
 	RPrint *p = (RPrint *)user;
 	RIODesc *desc = (RIODesc *)data;
-	p->cb_printf ("%2d %c %s 0x%08"PFMT64x" %s\n", desc->fd,
+	r_print_printf (p, "%2d %c %s 0x%08"PFMT64x" %s\n", desc->fd,
 			(desc->io && (desc->io->desc == desc)) ? '*' : '-',
 			r_str_rwx_i (desc->perm), r_io_desc_size (desc), desc->uri);
 	return true;
@@ -2178,7 +2180,7 @@ static int cmd_open(void *data, const char *input) {
 				RBinFile *bf = NULL;
 				r_list_foreach (core->bin->binfiles, iter, bf) {
 					if (bf && bf->bo && bf->bo->info) {
-						r_cons_printf ("oa %s %d %s\n", bf->bo->info->arch, bf->bo->info->bits, bf->file);
+						r_cons_printf (core->cons, "oa %s %d %s\n", bf->bo->info->arch, bf->bo->info->bits, bf->file);
 					}
 				}
 				return 1;
@@ -2357,7 +2359,7 @@ static int cmd_open(void *data, const char *input) {
 			}
 		} else {
 			if (core->io && core->io->desc) {
-				r_cons_printf ("%d\n", core->io->desc->fd);
+				r_cons_printf (core->cons, "%d\n", core->io->desc->fd);
 			}
 		}
 		return 0;
@@ -2477,15 +2479,15 @@ static int cmd_open(void *data, const char *input) {
 			}
 		} else { // "o="
 			fdsz = 0;
-			r_id_storage_foreach (&core->io->files, init_desc_list_visual_cb, core->print);
-			r_id_storage_foreach (&core->io->files, desc_list_visual_cb, core->print);
+			r_id_storage_foreach (&core->io->files, init_desc_list_visual_cb, core);
+			r_id_storage_foreach (&core->io->files, desc_list_visual_cb, core);
 		}
 		break;
 	case 'q': // "oq"
 		if (input[1] == 'q') { // "oqq"
 			if (core->io->desc) {
 				int fd = core->io->desc->fd;
-				r_cons_printf ("%d\n", fd);
+				r_cons_printf (core->cons, "%d\n", fd);
 			}
 		} else if (input[1] == '.') { // "oq."
 			r_id_storage_foreach (&core->io->files, desc_list_quiet2_cb, core->print);
@@ -2514,7 +2516,7 @@ static int cmd_open(void *data, const char *input) {
 		pj_a (pj);
 		r_id_storage_foreach (&core->io->files, desc_list_json_cb, pj);
 		pj_end (pj);
-		core->print->cb_printf ("%s\n", pj_string (pj));
+		r_cons_printf (core->cons, "%s\n", pj_string (pj));
 		pj_free (pj);
 		break;
 	case 'L': // "oL"
@@ -2523,7 +2525,7 @@ static int cmd_open(void *data, const char *input) {
 			return 0;
 		}
 		if (input[1] == ' ') {
-			if (r_lib_open (core->lib, input + 2) == -1) {
+			if (!r_lib_open (core->lib, input + 2)) {
 				R_LOG_ERROR ("Oops. Cannot open library");
 			}
 		} else {
@@ -2611,14 +2613,14 @@ static int cmd_open(void *data, const char *input) {
 		if (input[1] == 'q') { // "o.q" // same as oq
 			RIOMap *map = r_io_map_get_at (core->io, core->addr);
 			if (map) {
-				r_cons_printf ("%d\n", map->fd);
+				r_cons_printf (core->cons, "%d\n", map->fd);
 			}
 		} else {
 			RIOMap *map = r_io_map_get_at (core->io, core->addr);
 			if (map) {
 				RIODesc *desc = r_io_desc_get (core->io, map->fd);
 				if (desc) {
-					r_cons_printf ("%s\n", desc->uri);
+					r_cons_printf (core->cons, "%s\n", desc->uri);
 				}
 			}
 		}

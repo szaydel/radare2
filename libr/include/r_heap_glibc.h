@@ -12,17 +12,17 @@ R_LIB_VERSION_HEADER(r_heap_glibc);
 
 // XXX dupe with jemalloc
 
-#define PRINTF_A(color, fmt , ...) r_cons_printf (color fmt Color_RESET, __VA_ARGS__)
+#define PRINTF_A(color, fmt , ...) r_cons_gprintf (color fmt Color_RESET, __VA_ARGS__)
 #define PRINTF_YA(fmt, ...) PRINTF_A ("%s", fmt, pal->addr, __VA_ARGS__)
 #define PRINTF_GA(fmt, ...) PRINTF_A ("%s", fmt, pal->args, __VA_ARGS__)
 #define PRINTF_BA(fmt, ...) PRINTF_A ("%s", fmt, pal->num, __VA_ARGS__)
 #define PRINTF_RA(fmt, ...) PRINTF_A ("%s", fmt, pal->invalid, __VA_ARGS__)
 
-#define PRINT_A(color, msg) r_cons_print (color msg Color_RESET)
-#define PRINT_YA(msg) r_cons_printf ("%s" msg Color_RESET, pal->addr)
-#define PRINT_GA(msg) r_cons_printf ("%s" msg Color_RESET, pal->args)
-#define PRINT_BA(msg) r_cons_printf ("%s" msg Color_RESET, pal->num)
-#define PRINT_RA(msg) r_cons_printf ("%s" msg Color_RESET, pal->invalid)
+#define PRINT_A(color, msg) r_cons_gprint (color msg Color_RESET)
+#define PRINT_YA(msg) r_cons_gprintf ("%s" msg Color_RESET, pal->addr)
+#define PRINT_GA(msg) r_cons_gprintf ("%s" msg Color_RESET, pal->args)
+#define PRINT_BA(msg) r_cons_gprintf ("%s" msg Color_RESET, pal->num)
+#define PRINT_RA(msg) r_cons_gprintf ("%s" msg Color_RESET, pal->invalid)
 
 #endif
 
@@ -34,7 +34,7 @@ R_LIB_VERSION_HEADER(r_heap_glibc);
 #define NSMALLBINS 64
 #define NFASTBINS 10
 #define BINMAPSHIFT 5
-#define SZ core->dbg->bits
+#define SZ (core->dbg->bits == 64 ? 8 : 4)
 #define FASTBIN_IDX_TO_SIZE(i) ((SZ * 4) + (SZ * 2) * (i - 1))
 #define BITSPERMAP (1U << BINMAPSHIFT)
 #define BINMAPSIZE (NBINS / BITSPERMAP)

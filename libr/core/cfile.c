@@ -303,7 +303,6 @@ R_API char *r_core_sysenv_begin(RCore *core, const char *cmd) {
 	r_sys_setenv ("R2_COLOR", s);
 	free (s);
 	r_sys_setenv ("R2_UTF8", r_config_get_b (core->config, "scr.utf8")? "1": "0");
-	r_sys_setenv ("R2_DEBUG", r_config_get_b (core->config, "cfg.debug")? "1": "0");
 	r_sys_setenv ("R2_IOVA", r_config_get_b (core->config, "io.va")? "1": "0");
 #if 0
 	free (config_sdb_path);
@@ -962,7 +961,7 @@ R_API RIODesc *r_core_file_open(RCore *r, const char *file, int flags, ut64 load
 	}
 	r->io->bits = r->rasm->config->bits; // TODO: we need an api for this
 	RIODesc *fd = r_io_open_nomap (r->io, file, flags, 0644);
-	if (r_cons_is_breaked()) {
+	if (r_cons_is_breaked (r->cons)) {
 		goto beach;
 	}
 	if (!fd) {

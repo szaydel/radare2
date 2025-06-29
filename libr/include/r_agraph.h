@@ -116,13 +116,13 @@ R_API bool r_agraph_del_node(const RAGraph *g, const char *title);
 R_API void r_agraph_add_edge(const RAGraph *g, RANode *a, RANode *b, bool highlight);
 R_API void r_agraph_add_edge_at(const RAGraph *g, RANode *a, RANode *b, int nth);
 R_API void r_agraph_del_edge(const RAGraph *g, RANode *a, RANode *b);
-R_API void r_agraph_print(RAGraph *g);
+R_API void r_agraph_print(RAGraph *g, void *core);
 R_API void r_agraph_print_json(RAGraph *g, PJ *pj);
 R_API Sdb *r_agraph_get_sdb(RAGraph *g);
 R_API void r_agraph_foreach(RAGraph *g, RANodeCallback cb, void *user);
 R_API void r_agraph_foreach_edge(RAGraph *g, RAEdgeCallback cb, void *user);
 R_API void r_agraph_set_curnode(RAGraph *g, RANode *node);
-R_API RAGraph *r_agraph_new_from_graph(const RGraph *graph, RAGraphTransitionCBs *cbs, void *user);
+R_API RAGraph *r_agraph_new_from_graph(void *core, const RGraph *graph, RAGraphTransitionCBs *cbs, void *user);
 #endif
 
 #ifdef __cplusplus

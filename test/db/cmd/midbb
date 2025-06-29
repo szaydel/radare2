@@ -114,7 +114,7 @@ EXPECT=<<EOF
 
 [
   {
-    "offset": 0,
+    "addr": 0,
     "esil": ",",
     "refptr": 0,
     "fcn_addr": 0,
@@ -133,7 +133,7 @@ EXPECT=<<EOF
     ]
   },
   {
-    "offset": 3,
+    "addr": 3,
     "esil": "al,rax,+=[1],7,$o,of,:=,7,$s,sf,:=,$z,zf,:=,7,$c,cf,:=,$p,pf,:=,3,$c,af,:=",
     "refptr": 1,
     "fcn_addr": 0,
@@ -156,7 +156,7 @@ EXPECT=<<EOF
     ]
   },
   {
-    "offset": 5,
+    "addr": 5,
     "ptr": 3238002721,
     "val": 3238002721,
     "esil": "3238002721,rax,=",
@@ -174,7 +174,7 @@ EXPECT=<<EOF
     "type2_num": 0
   },
   {
-    "offset": 9,
+    "addr": 9,
     "val": 253,
     "esil": "0,cf,:=,1,253,-,1,<<,ebx,&,?{,1,cf,:=,},253,ebx,>>,ebx,=,$z,zf,:=,$p,pf,:=,31,$s,sf,:=",
     "refptr": 0,
@@ -198,7 +198,7 @@ EXPECT=<<EOF
     ]
   },
   {
-    "offset": 12,
+    "addr": 12,
     "ptr": 44,
     "val": 44,
     "esil": "44,rbx,=",
@@ -223,7 +223,7 @@ EXPECT=<<EOF
     ]
   },
   {
-    "offset": 17,
+    "addr": 17,
     "esil": "0x3,rip,=",
     "refptr": 0,
     "fcn_addr": 0,
@@ -252,7 +252,7 @@ EXPECT=<<EOF
 
 [
   {
-    "offset": 0,
+    "addr": 0,
     "esil": ",",
     "refptr": 0,
     "fcn_addr": 0,
@@ -271,7 +271,7 @@ EXPECT=<<EOF
     ]
   },
   {
-    "offset": 5,
+    "addr": 5,
     "ptr": 3238002721,
     "val": 3238002721,
     "esil": "3238002721,rax,=",
@@ -289,7 +289,7 @@ EXPECT=<<EOF
     "type2_num": 0
   },
   {
-    "offset": 10,
+    "addr": 10,
     "esil": "0x9,rip,=",
     "refptr": 0,
     "fcn_addr": 0,
@@ -313,7 +313,7 @@ EXPECT=<<EOF
     ]
   },
   {
-    "offset": 12,
+    "addr": 12,
     "ptr": 44,
     "val": 44,
     "esil": "44,rbx,=",
@@ -338,7 +338,7 @@ EXPECT=<<EOF
     ]
   },
   {
-    "offset": 17,
+    "addr": 17,
     "esil": "0x3,rip,=",
     "refptr": 0,
     "fcn_addr": 0,
@@ -371,7 +371,7 @@ EXPECT=<<EOF
   "addr": 0,
   "ops": [
     {
-      "offset": 0,
+      "addr": 0,
       "esil": ",",
       "refptr": 0,
       "fcn_addr": 0,
@@ -390,7 +390,7 @@ EXPECT=<<EOF
       ]
     },
     {
-      "offset": 3,
+      "addr": 3,
       "esil": "al,rax,+=[1],7,$o,of,:=,7,$s,sf,:=,$z,zf,:=,7,$c,cf,:=,$p,pf,:=,3,$c,af,:=",
       "refptr": 1,
       "fcn_addr": 0,
@@ -413,7 +413,7 @@ EXPECT=<<EOF
       ]
     },
     {
-      "offset": 5,
+      "addr": 5,
       "ptr": 3238002721,
       "val": 3238002721,
       "esil": "3238002721,rax,=",
@@ -431,7 +431,7 @@ EXPECT=<<EOF
       "type2_num": 0
     },
     {
-      "offset": 10,
+      "addr": 10,
       "esil": "0x9,rip,=",
       "refptr": 0,
       "fcn_addr": 0,
@@ -455,7 +455,7 @@ EXPECT=<<EOF
       ]
     },
     {
-      "offset": 9,
+      "addr": 9,
       "val": 253,
       "esil": "0,cf,:=,1,253,-,1,<<,ebx,&,?{,1,cf,:=,},253,ebx,>>,ebx,=,$z,zf,:=,$p,pf,:=,31,$s,sf,:=",
       "refptr": 0,
@@ -479,7 +479,7 @@ EXPECT=<<EOF
       ]
     },
     {
-      "offset": 12,
+      "addr": 12,
       "ptr": 44,
       "val": 44,
       "esil": "44,rbx,=",
@@ -504,7 +504,7 @@ EXPECT=<<EOF
       ]
     },
     {
-      "offset": 17,
+      "addr": 17,
       "esil": "0x3,rip,=",
       "refptr": 0,
       "fcn_addr": 0,
@@ -652,11 +652,11 @@ EXPECT=<<EOF
 |           0x00560e97      31e9           xor ecx, ebp
 |           0x00560e99      1400           adc al, 0
 
-            [36m;-- sym.real:[0m
-            [32m0x00560e95[0m  ~   [36mba[36m0f[33m31[36me9[36m14[0m     [36mmov[36m edx[0m,[36m[36m [33m0x14e9310f[0m[0m[0m
-[36m|[0m           [36m;-- sym.dummy:[0m
-[36m|[0m           [32m0x00560e97[0m      [33m31[36me9[0m           [33mxor[36m ecx[0m,[36m ebp[0m[0m[0m
-[36m|[0m           [32m0x00560e99[0m      [36m14[32m00[0m           [33madc[36m al[0m,[36m [33m0[0m[0m[0m
+            [33m;-- sym.real:[0m
+            [32m0x00560e95[0m  ~   [36mba[36m0f[33m31[36me9[36m14[0m     [36mmov[37m edx[0m,[33m[33m [32m0x14e9310f[0m[0m[0m
+[36m|[0m           [33m;-- sym.dummy:[0m
+[36m|[0m           [32m0x00560e97[0m      [33m31[36me9[0m           [33mxor[37m ecx[0m,[37m ebp[0m[0m[0m
+[36m|[0m           [32m0x00560e99[0m      [36m14[32m00[0m           [33madc[37m al[0m,[37m [32m0[0m[0m[0m
 EOF
 RUN
 
@@ -670,9 +670,9 @@ s..560e99
 pd 3 @e:scr.color=1
 EOF
 EXPECT=<<EOF
-            [32m0x00560e99[0m      [36m14[32m00[0m           [33madc[36m al[0m,[36m [33m0[0m[0m[0m
-            [32m0x00560e9b[0m      [32m00[32m00[0m           [33madd byte[36m [0m[[36meax[0m][36m[0m,[36m al[0m[0m[0m
-            [32m0x00560e9d[0m      [36ma8[33m36[0m           [33mtest[36m al[0m,[36m[36m [33m0x36[0m[0m[31m               [31m; 54[0m
+            [32m0x00560e99[0m      [36m14[32m00[0m           [33madc[37m al[0m,[37m [32m0[0m[0m[0m
+            [32m0x00560e9b[0m      [32m00[32m00[0m           [33madd byte[37m [0m[[37meax[0m][37m[0m,[37m al[0m[0m[0m
+            [32m0x00560e9d[0m      [36ma8[33m36[0m           [36mtest[37m al[0m,[33m[33m [32m0x36[0m[0m[31m               [31m; 54[0m
 EOF
 RUN
 
@@ -687,11 +687,11 @@ s 0x00560e95
 pd 3
 EOF
 EXPECT=<<EOF
-            [36m;-- sym.real:[0m
-            [32m0x00560e95[0m  ~   [36mba[36m0f[33m31[36me9[36m14[0m     [36mmov[36m edx[0m,[36m[36m [33m0x14e9310f[0m[0m[0m
-            [36m;-- sym.dummy:[0m
-            [32m0x00560e97[0m      [33m31[36me9[0m           [33mxor[36m ecx[0m,[36m ebp[0m[0m[0m
-            [32m0x00560e99[0m      [36m14[32m00[0m           [33madc[36m al[0m,[36m [33m0[0m[0m[0m
+            [33m;-- sym.real:[0m
+            [32m0x00560e95[0m  ~   [36mba[36m0f[33m31[36me9[36m14[0m     [36mmov[37m edx[0m,[33m[33m [32m0x14e9310f[0m[0m[0m
+            [33m;-- sym.dummy:[0m
+            [32m0x00560e97[0m      [33m31[36me9[0m           [33mxor[37m ecx[0m,[37m ebp[0m[0m[0m
+            [32m0x00560e99[0m      [36m14[32m00[0m           [33madc[37m al[0m,[37m [32m0[0m[0m[0m
 EOF
 RUN
 
@@ -707,7 +707,7 @@ f sup.babel0=0x100003bc0
 pd 1
 EOF
 EXPECT=<<EOF
-        [36m,[0m[36m=[0m[36m<[0m [32m0x100003b34[0m      [33m60[36m04[32m00[36mb4[0m       [32mcbz[36m x0[0m,[36m[36m [33m0x100003bc0[0m[0m[0m
-        [36m,[0m[36m=[0m[36m<[0m [32m0x100003b34[0m      [33m60[36m04[32m00[36mb4[0m       [32mcbz[36m x0[0m,[36m[36m sup.babel0[0m[0m[0m
+        [36m,[0m[36m=[0m[36m<[0m [32m0x100003b34[0m      [33m60[36m04[32m00[36mb4[0m       [32mcbz[37m x0[0m,[33m[33m [32m0x100003bc0[0m[0m[0m
+        [36m,[0m[36m=[0m[36m<[0m [32m0x100003b34[0m      [33m60[36m04[32m00[36mb4[0m       [32mcbz[37m x0[0m,[33m[33m sup.babel0[0m[0m[0m
 EOF
 RUN

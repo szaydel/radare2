@@ -31,7 +31,7 @@ static int cmd_macro(void *data, const char *_input) {
 			if (!strchr (_input, ';')) {
 				r_strbuf_append (sb, ";");
 			}
-			r_line_set_prompt (core->cons, "> ");
+			r_line_set_prompt (core->cons->line, "> ");
 			bool closepar = true;
 			while (true) {
 				const char *ptr = r_line_readline (core->cons);
@@ -59,7 +59,9 @@ static int cmd_macro(void *data, const char *_input) {
 	if (input[0] == 'j' || input[0] == '*') {
 		const char ch = input[1];
 		if (!ch || ch == ')') {
-			r_cmd_macro_list (&core->rcmd->macro, *input);
+			char *s = r_cmd_macro_list (&core->rcmd->macro, *input);
+			r_cons_println (core->cons, s);
+			free (s);
 			free (input);
 			return R_CMD_RC_SUCCESS;
 		}
@@ -73,7 +75,11 @@ static int cmd_macro(void *data, const char *_input) {
 		r_cmd_macro_rm (&core->rcmd->macro, input + 1);
 		break;
 	case '\0':
-		r_cmd_macro_list (&core->rcmd->macro, *input);
+		{
+			char *s = r_cmd_macro_list (&core->rcmd->macro, *input);
+			r_cons_print (core->cons, s);
+			free (s);
+		}
 		break;
 	case '(':
 	case '?':

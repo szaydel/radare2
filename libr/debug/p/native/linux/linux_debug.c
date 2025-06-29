@@ -1,9 +1,10 @@
-/* radare - LGPL - Copyright 2009-2024 - pancake */
+/* radare - LGPL - Copyright 2009-2025 - pancake */
 
 #include <r_userconf.h>
 
 #if DEBUGGER
 #include <r_debug.h>
+#include <r_core.h>
 #include <r_asm.h>
 #include <r_lib.h>
 #include <r_anal.h>
@@ -87,6 +88,7 @@ static void linux_dbg_wait_break(RDebug *dbg);
 static RDebugReasonType linux_handle_new_task(RDebug *dbg, int tid);
 
 int linux_handle_signals(RDebug *dbg, int tid) {
+	RCore *core = dbg->coreb.core;
 	siginfo_t siginfo = {0};
 	int ret = r_debug_ptrace (dbg, PTRACE_GETSIGINFO, tid, 0, (r_ptrace_data_t)&siginfo);
 	if (ret == -1) {
@@ -159,7 +161,7 @@ int linux_handle_signals(RDebug *dbg, int tid) {
 		default:
 			break;
 		}
-		if (dbg->reason.signum != SIGTRAP && (dbg->reason.signum != SIGINT || !r_cons_is_breaked ())) {
+		if (dbg->reason.signum != SIGTRAP && (dbg->reason.signum != SIGINT || !r_cons_is_breaked (core->cons))) {
 			const char *name = r_signal_tostring (dbg->reason.signum);
 			eprintf ("[+] SIGNAL %d (aka %s) errno=%d addr=0x%08"PFMT64x " code=%d si_pid=%d ret=%d\n",
 				siginfo.si_signo, name, siginfo.si_errno,
@@ -378,13 +380,14 @@ bool linux_set_options(RDebug *dbg, int pid) {
 	}
 	/* SIGTRAP | 0x80 on signal handler .. not supported on all archs */
 	traceflags |= PTRACE_O_TRACESYSGOOD;
+	RCore *core = dbg->coreb.core;
 
 	// PTRACE_SETOPTIONS can fail because of the asynchronous nature of ptrace
 	// If the target is traced, the loop will always end with success
 	while (r_debug_ptrace (dbg, PTRACE_SETOPTIONS, pid, 0, (r_ptrace_data_t)(size_t)traceflags) == -1) {
-		void *bed = r_cons_sleep_begin ();
+		void *bed = r_cons_sleep_begin (core->cons);
 		usleep (1000);
-		r_cons_sleep_end (bed);
+		r_cons_sleep_end (core->cons, bed);
 	}
 	return true;
 }
@@ -495,19 +498,21 @@ RDebugReasonType linux_dbg_wait(RDebug *dbg, int pid) {
 		// In the main context, SIGINT is propagated to the debuggee if it is
 		// in the same process group. Otherwise, the task is running in
 		// background and SIGINT will not be propagated to the debuggee.
-		if (r_cons_context_is_main ()) {
-			r_cons_break_push ((RConsBreak)linux_dbg_wait_break_main, dbg);
+		RCore *core = dbg->coreb.core;
+		const bool is_main = r_cons_context_is_main (core->cons, core->cons->context);
+		if (is_main) {
+			r_cons_break_push (core->cons, (RConsBreak)linux_dbg_wait_break_main, dbg);
 		} else {
-			r_cons_break_push ((RConsBreak)linux_dbg_wait_break, dbg);
+			r_cons_break_push (core->cons, (RConsBreak)linux_dbg_wait_break, dbg);
 		}
-		void *bed = r_cons_sleep_begin ();
+		void *bed = r_cons_sleep_begin (core->cons);
 		if (dbg->continue_all_threads) {
 			ret = waitpid (-1, &status, flags);
 		} else {
 			ret = waitpid (pid, &status, flags);
 		}
-		r_cons_sleep_end (bed);
-		r_cons_break_pop ();
+		r_cons_sleep_end (core->cons, bed);
+		r_cons_break_pop (core->cons);
 
 		if (ret < 0) {
 			// Continue when interrupted by user;
@@ -964,26 +969,26 @@ RList *linux_thread_list(RDebug *dbg, int pid, RList *list) {
 	return list;
 }
 
-#define PRINT_FPU(fpregs) \
-	r_cons_printf ("cwd = 0x%04x  ; control   ", (fpregs).cwd);\
-	r_cons_printf ("swd = 0x%04x  ; status\n", (fpregs).swd);\
-	r_cons_printf ("ftw = 0x%04x              ", (fpregs).ftw);\
-	r_cons_printf ("fop = 0x%04x\n", (fpregs).fop);\
-	r_cons_printf ("rip = 0x%016"PFMT64x"  ", (ut64)(fpregs).rip);\
-	r_cons_printf ("rdp = 0x%016"PFMT64x"\n", (ut64)(fpregs).rdp);\
-	r_cons_printf ("mxcsr = 0x%08x        ", (fpregs).mxcsr);\
-	r_cons_printf ("mxcr_mask = 0x%08x\n", (fpregs).mxcr_mask)\
+#define PRINT_FPU(cons, fpregs) \
+	r_cons_printf (cons, "cwd = 0x%04x  ; control   ", (fpregs).cwd);\
+	r_cons_printf (cons, "swd = 0x%04x  ; status\n", (fpregs).swd);\
+	r_cons_printf (cons, "ftw = 0x%04x              ", (fpregs).ftw);\
+	r_cons_printf (cons, "fop = 0x%04x\n", (fpregs).fop);\
+	r_cons_printf (cons, "rip = 0x%016"PFMT64x"  ", (ut64)(fpregs).rip);\
+	r_cons_printf (cons, "rdp = 0x%016"PFMT64x"\n", (ut64)(fpregs).rdp);\
+	r_cons_printf (cons, "mxcsr = 0x%08x        ", (fpregs).mxcsr);\
+	r_cons_printf (cons, "mxcr_mask = 0x%08x\n", (fpregs).mxcr_mask)\
 
-#define PRINT_FPU_NOXMM(fpregs) \
-	r_cons_printf ("cwd = 0x%04lx  ; control   ", (fpregs).cwd);\
-	r_cons_printf ("swd = 0x%04lx  ; status\n", (fpregs).swd);\
-	r_cons_printf ("twd = 0x%04lx              ", (fpregs).twd);\
-	r_cons_printf ("fip = 0x%04lx          \n", (fpregs).fip);\
-	r_cons_printf ("fcs = 0x%04lx              ", (fpregs).fcs);\
-	r_cons_printf ("foo = 0x%04lx          \n", (fpregs).foo);\
-	r_cons_printf ("fos = 0x%04lx              ", (fpregs).fos)
+#define PRINT_FPU_NOXMM(cons, fpregs) \
+	r_cons_printf (cons, "cwd = 0x%04lx  ; control   ", (fpregs).cwd);\
+	r_cons_printf (cons, "swd = 0x%04lx  ; status\n", (fpregs).swd);\
+	r_cons_printf (cons, "twd = 0x%04lx              ", (fpregs).twd);\
+	r_cons_printf (cons, "fip = 0x%04lx          \n", (fpregs).fip);\
+	r_cons_printf (cons, "fcs = 0x%04lx              ", (fpregs).fcs);\
+	r_cons_printf (cons, "foo = 0x%04lx          \n", (fpregs).foo);\
+	r_cons_printf (cons, "fos = 0x%04lx              ", (fpregs).fos)
 
-static void print_fpu(void *f) {
+static void print_fpu(RCons *cons, void *f) {
 	if (!f) {
 		R_LOG_WARN ("getfpregs not implemented");
 		return;
@@ -992,41 +997,41 @@ static void print_fpu(void *f) {
 	int i,j;
 	struct user_fpregs_struct fpregs = *(struct user_fpregs_struct *)f;
 #if __ANDROID__
-	PRINT_FPU (fpregs);
+	PRINT_FPU (cons, fpregs);
 	for (i = 0;i < 8; i++) {
 		ut64 *b = (ut64 *)&fpregs.st_space[i*4];
 		ut32 *c = (ut32*)&fpregs.st_space;
 		float *f = (float *)&fpregs.st_space;
 		c = c + (i * 4);
 		f = f + (i * 4);
-		r_cons_printf ("st%d =%0.3lg (0x%016"PFMT64x") | %0.3f (%08x) | "\
+		r_cons_printf (cons, "st%d =%0.3lg (0x%016"PFMT64x") | %0.3f (%08x) | "\
 			"%0.3f (%08x) \n", i,
 			(double)*((double*)&fpregs.st_space[i*4]), *b, (float) f[0],
 			c[0], (float) f[1], c[1]);
 	}
 #else
-	r_cons_printf ("---- x86-64 ----\n");
-	PRINT_FPU (fpregs);
-	r_cons_printf ("size = 0x%08x\n", (ut32)sizeof (fpregs));
+	r_cons_printf (cons, "---- x86-64 ----\n");
+	PRINT_FPU (cons, fpregs);
+	r_cons_printf (cons, "size = 0x%08x\n", (ut32)sizeof (fpregs));
 	for (i = 0; i < 16; i++) {
 		ut32 *a = (ut32 *)&fpregs.xmm_space;
 		a = a + (i * 4);
-		r_cons_printf ("xmm%d = %08x %08x %08x %08x   ", i, (int)a[0], (int)a[1],
+		r_cons_printf (cons, "xmm%d = %08x %08x %08x %08x   ", i, (int)a[0], (int)a[1],
 					   (int)a[2], (int)a[3] );
 		if (i < 8) {
 			ut64 *st_u64 = (ut64*)&fpregs.st_space[i * 4];
 			ut8 *st_u8 = (ut8 *)&fpregs.st_space[i * 4];
 			long double *st_ld = (long double *)&fpregs.st_space[i * 4];
-			r_cons_printf ("mm%d = 0x%016" PFMT64x " | st%d = ", i, *st_u64, i);
+			r_cons_printf (cons, "mm%d = 0x%016" PFMT64x " | st%d = ", i, *st_u64, i);
 			// print as hex TBYTE - always little endian
 			for (j = 9; j >= 0; j--) {
-				r_cons_printf ("%02x", st_u8[j]);
+				r_cons_printf (cons, "%02x", st_u8[j]);
 			}
 			// Using %Lf and %Le even though we do not show the extra precision to avoid another cast
 			// %f with (double)*st_ld would also work
-			r_cons_printf (" %Le %Lf\n", *st_ld, *st_ld);
+			r_cons_printf (cons, " %Le %Lf\n", *st_ld, *st_ld);
 		} else {
-			r_cons_printf ("\n");
+			r_cons_printf (cons, "\n");
 		}
 	}
 #endif // __ANDROID__
@@ -1034,16 +1039,16 @@ static void print_fpu(void *f) {
 	int i;
 #if __ANDROID__
 	struct user_fpxregs_struct fpxregs = *(struct user_fpxregs_struct*)f;
-	r_cons_printf ("---- x86-32 ----\n");
-	r_cons_printf ("cwd = 0x%04x  ; control   ", fpxregs.cwd);
-	r_cons_printf ("swd = 0x%04x  ; status\n", fpxregs.swd);
-	r_cons_printf ("twd = 0x%04x ", fpxregs.twd);
-	r_cons_printf ("fop = 0x%04x\n", fpxregs.fop);
-	r_cons_printf ("fip = 0x%08x\n", (ut32)fpxregs.fip);
-	r_cons_printf ("fcs = 0x%08x\n", (ut32)fpxregs.fcs);
-	r_cons_printf ("foo = 0x%08x\n", (ut32)fpxregs.foo);
-	r_cons_printf ("fos = 0x%08x\n", (ut32)fpxregs.fos);
-	r_cons_printf ("mxcsr = 0x%08x\n", (ut32)fpxregs.mxcsr);
+	r_cons_printf (cons, "---- x86-32 ----\n");
+	r_cons_printf (cons, "cwd = 0x%04x  ; control   ", fpxregs.cwd);
+	r_cons_printf (cons, "swd = 0x%04x  ; status\n", fpxregs.swd);
+	r_cons_printf (cons, "twd = 0x%04x ", fpxregs.twd);
+	r_cons_printf (cons, "fop = 0x%04x\n", fpxregs.fop);
+	r_cons_printf (cons, "fip = 0x%08x\n", (ut32)fpxregs.fip);
+	r_cons_printf (cons, "fcs = 0x%08x\n", (ut32)fpxregs.fcs);
+	r_cons_printf (cons, "foo = 0x%08x\n", (ut32)fpxregs.foo);
+	r_cons_printf (cons, "fos = 0x%08x\n", (ut32)fpxregs.fos);
+	r_cons_printf (cons, "mxcsr = 0x%08x\n", (ut32)fpxregs.mxcsr);
 	for (i = 0; i < 8; i++) {
 		ut32 *a = (ut32*)(&fpxregs.xmm_space);
 		ut64 *b = (ut64 *)(&fpxregs.st_space[i * 4]);
@@ -1052,17 +1057,17 @@ static void print_fpu(void *f) {
 		a = a + (i * 4);
 		c = c + (i * 4);
 		f = f + (i * 4);
-		r_cons_printf ("xmm%d = %08x %08x %08x %08x   ", i, (int)a[0],
+		r_cons_printf (cons, "xmm%d = %08x %08x %08x %08x   ", i, (int)a[0],
 			(int)a[1], (int)a[2], (int)a[3] );
-		r_cons_printf ("st%d = %0.3lg (0x%016"PFMT64x") | %0.3f (0x%08x) | "\
+		r_cons_printf (cons, "st%d = %0.3lg (0x%016"PFMT64x") | %0.3f (0x%08x) | "\
 			"%0.3f (0x%08x)\n", i,
 			(double)*((double*)(&fpxregs.st_space[i*4])), b[0],
 			f[0], c[0], f[1], c[1]);
 	}
 #else
 	struct user_fpregs_struct fpregs = *(struct user_fpregs_struct *)f;
-	r_cons_printf ("---- x86-32-noxmm ----\n");
-	PRINT_FPU_NOXMM (fpregs);
+	r_cons_printf (cons, "---- x86-32-noxmm ----\n");
+	PRINT_FPU_NOXMM (cons, fpregs);
 	for (i = 0; i < 8; i++) {
 		ut64 *b = (ut64 *)(&fpregs.st_space[i*4]);
 		double *d = (double*)b;
@@ -1070,7 +1075,7 @@ static void print_fpu(void *f) {
 		float *f = (float *)&fpregs.st_space;
 		c = c + (i * 4);
 		f = f + (i * 4);
-		r_cons_printf ("st%d = %0.3lg (0x%016"PFMT64x") | %0.3f (0x%08x) | "\
+		r_cons_printf (cons, "st%d = %0.3lg (0x%016"PFMT64x") | %0.3f (0x%08x) | "\
 			"%0.3f (0x%08x)\n", i, d[0], b[0], f[0], c[0], f[1], c[1]);
 	}
 #endif
@@ -1081,6 +1086,8 @@ static void print_fpu(void *f) {
 
 bool linux_reg_read(RDebug *dbg, int type, ut8 *buf, int size) {
 	bool showfpu = false;
+	RCore *core = dbg->coreb.core;
+	RCons *cons = core->cons;
 	int pid = dbg->tid;
 	if (pid == -1) {
 		if (dbg->pid == -1) {
@@ -1138,7 +1145,7 @@ bool linux_reg_read(RDebug *dbg, int type, ut8 *buf, int size) {
 				return false;
 			}
 			if (showfpu) {
-				print_fpu ((void *)&fpregs);
+				print_fpu (cons, (void *)&fpregs);
 			}
 			size = R_MIN (sizeof (fpregs), size);
 			memcpy (buf, &fpregs, size);
@@ -1149,7 +1156,7 @@ bool linux_reg_read(RDebug *dbg, int type, ut8 *buf, int size) {
 			ret = r_debug_ptrace (dbg, PTRACE_GETFPXREGS, pid, NULL, &fpxregs);
 			if (ret == 0) {
 				if (showfpu) {
-					print_fpu ((void *)&fpxregs);
+					print_fpu (cons, (void *)&fpxregs);
 				}
 				size = R_MIN (sizeof (fpxregs), size);
 				memcpy (buf, &fpxregs, size);
@@ -1157,7 +1164,7 @@ bool linux_reg_read(RDebug *dbg, int type, ut8 *buf, int size) {
 			} else {
 				ret = r_debug_ptrace (dbg, PTRACE_GETFPREGS, pid, NULL, &fpregs);
 				if (showfpu) {
-					print_fpu ((void *)&fpregs);
+					print_fpu (cons, (void *)&fpregs);
 				}
 				if (ret != 0) {
 					r_sys_perror ("PTRACE_GETFPREGS");
@@ -1170,7 +1177,7 @@ bool linux_reg_read(RDebug *dbg, int type, ut8 *buf, int size) {
 #else
 			ret = r_debug_ptrace (dbg, PTRACE_GETFPREGS, pid, NULL, &fpregs);
 			if (showfpu) {
-				print_fpu ((void *)&fpregs);
+				print_fpu (cons, (void *)&fpregs);
 			}
 			if (ret != 0) {
 				r_sys_perror ("PTRACE_GETFPREGS");
@@ -1185,7 +1192,7 @@ bool linux_reg_read(RDebug *dbg, int type, ut8 *buf, int size) {
 		return size;
 #else
 		if (showfpu) {
-			print_fpu (NULL);
+			print_fpu (cons, NULL);
 		}
 	#warning getfpregs not implemented for this platform
 #endif

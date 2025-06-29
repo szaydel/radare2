@@ -1,4 +1,4 @@
-/* radare2 - LGPL - Copyright 2009-2024 - pancake */
+/* radare2 - LGPL - Copyright 2009-2025 - pancake */
 
 #include <r_lang.h>
 #include <r_util.h>
@@ -53,7 +53,6 @@ R_API RLang *r_lang_new(void) {
 	}
 	lang->sessions = r_list_newf (r_lang_session_free);
 	lang->defs->free = (RListFree)r_lang_def_free;
-	lang->cb_printf = (PrintfCallback)printf;
 #if HAVE_SYSTEM
 #if R2__UNIX__
 	r_lang_plugin_add (lang, &r_lang_plugin_s);
@@ -344,9 +343,9 @@ R_API bool r_lang_prompt(RLang *lang) {
 
 	/* foo */
 	for (;;) {
-		r_kons_flush (lang->cons);
+		r_cons_flush (lang->cons);
 		snprintf (buf, sizeof (buf) - 1, "%s> ", plugin->meta.name);
-		r_line_set_prompt (lang->cons, buf);
+		r_line_set_prompt (lang->cons->line, buf);
 #if 0
 		printf ("%s> ", lang->cur->name);
 		fflush (stdout);
@@ -358,7 +357,7 @@ R_API bool r_lang_prompt(RLang *lang) {
 		if (!p) {
 			break;
 		}
-		r_line_hist_add (p);
+		r_line_hist_add (lang->cons->line, p);
 		strncpy (buf, p, sizeof (buf) - 1);
 		if (*buf == '!') {
 			if (buf[1]) {
@@ -370,7 +369,7 @@ R_API bool r_lang_prompt(RLang *lang) {
 					r_lang_run (lang, foo, 0);
 					free (code);
 					code = foo;
-				} while (r_cons_yesno ('y', "Edit again? (Y/n)"));
+				} while (r_cons_yesno (lang->cons, 'y', "Edit again? (Y/n)"));
 				free (foo);
 			}
 			continue;
@@ -410,7 +409,7 @@ R_API bool r_lang_prompt(RLang *lang) {
 		}
 	}
 	// XXX: leaking history
-	r_line_set_prompt (line->cons, prompt);
+	r_line_set_prompt (line->cons->line, prompt);
 	line->completion = oc;
 	line->history = hist;
 	clearerr (stdin);

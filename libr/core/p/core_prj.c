@@ -1,11 +1,8 @@
-/* radare - MIT - Copyright 2024 - pancake */
+/* radare - MIT - Copyright 2024-2025 - pancake */
 
 #define R_LOG_ORIGIN "prj"
 
 #include <r_core.h>
-static inline ut64 r_buf_at(RBuffer *b) {
-	return r_buf_seek (b, 0, R_BUF_CUR);
-}
 
 enum {
 	RPRJ_MAPS,
@@ -333,6 +330,7 @@ static RIOMap *coremod(Cursor *cur, R2ProjectMod *mod) {
 	ut32 mapid;
 	r_id_storage_get_lowest (maps, &mapid);
 	ut64 at = r_buf_at (b);
+	ut64 bsz = r_buf_size (b);
 	const char *mod_name = rprj_st_get (cur->st, mod->name);
 	do {
 		RIOMap *m = r_id_storage_get (maps, mapid);
@@ -350,6 +348,10 @@ static RIOMap *coremod(Cursor *cur, R2ProjectMod *mod) {
 		if (!strcmp (name, mod_name)) {
 			return m;
 		}
+		if (at + sizeof (R2ProjectMod) >= bsz) {
+			// should never happen
+			break;
+		}
 		at += sizeof (R2ProjectMod);
 		r_buf_seek (b, at, SEEK_SET);
 	} while (r_id_storage_get_next (maps, &mapid));
@@ -363,6 +365,7 @@ static void rprj_mods_write(Cursor *cur) {
 	ut32 mapid;
 	r_id_storage_get_lowest (maps, &mapid);
 	ut64 at = r_buf_at (b);
+	ut64 bsz = r_buf_size (b);
 	do {
 		RIOMap *m = r_id_storage_get (maps, mapid);
 		if (!m) {
@@ -386,6 +389,10 @@ static void rprj_mods_write(Cursor *cur) {
 		mod.csum = checksum (cur->core, va, 1024);
 		rprj_mods_write_one (b, &mod);
 		r_list_append (cur->mods, r_mem_dup (&mod, sizeof (mod)));
+		if (at + sizeof (R2ProjectMod) >= bsz) {
+			// should never happen
+			break;
+		}
 		at += sizeof (R2ProjectMod);
 		r_buf_seek (b, at, SEEK_SET);
 	} while (r_id_storage_get_next (maps, &mapid));
@@ -459,7 +466,7 @@ static void prj_save(RCore *core, const char *file) {
 	}
 	// -------------
 	if (r_file_exists (file)) {
-		if (!r_cons_yesno ('y', "Overwrite project file (Y/n)")) {
+		if (!r_cons_yesno (core->cons, 'y', "Overwrite project file (Y/n)")) {
 			R_LOG_ERROR ("File exists");
 			return;
 		}
@@ -514,11 +521,11 @@ static void prj_load(RCore *core, const char *file, int mode) {
 		return;
 	}
 	if (mode & MODE_LOG) {
-		r_cons_printf ("Project {\n");
-		r_cons_printf ("  Header {\n");
-		r_cons_printf ("    magic = 0x%08x OK\n", hdr.magic);
-		r_cons_printf ("    version = %d\n", hdr.version);
-		r_cons_printf ("  }\n");
+		r_cons_printf (core->cons, "Project {\n");
+		r_cons_printf (core->cons, "  Header {\n");
+		r_cons_printf (core->cons, "    magic = 0x%08x OK\n", hdr.magic);
+		r_cons_printf (core->cons, "    version = %d\n", hdr.version);
+		r_cons_printf (core->cons, "  }\n");
 	}
 	R2ProjectStringTable st;
 	Cursor cur = { core, &st, b, r_list_newf (free) };
@@ -563,12 +570,12 @@ static void prj_load(RCore *core, const char *file, int mode) {
 			break;
 		}
 		if (mode & MODE_LOG) {
-			r_cons_printf ("  Entry<%s> {\n", entry_type_tostring (entry.type));
-			r_cons_printf ("    type = 0x%02x\n", entry.type);
-			r_cons_printf ("    size = %d\n", entry.size);
+			r_cons_printf (core->cons, "  Entry<%s> {\n", entry_type_tostring (entry.type));
+			r_cons_printf (core->cons, "    type = 0x%02x\n", entry.type);
+			r_cons_printf (core->cons, "    size = %d\n", entry.size);
 		}
 		if (mode & MODE_SCRIPT) {
-			r_cons_printf ("'f entry%d.%s=0x%08"PFMT64x"\n", n, entry_type_tostring (entry.type), r_buf_at (b));
+			r_cons_printf (core->cons, "'f entry%d.%s=0x%08"PFMT64x"\n", n, entry_type_tostring (entry.type), r_buf_at (b));
 		}
 		next_entry += entry.size;
 		switch (entry.type) {
@@ -579,16 +586,16 @@ static void prj_load(RCore *core, const char *file, int mode) {
 			int p = r_buf_at (b);
 			// for (i = sizeof (R2ProjectEntry); i < entry.size; i++) {
 			if (mode & MODE_LOG) {
-				r_cons_printf ("      => (%d) ", (int)strlen (data + p));
+				r_cons_printf (core->cons, "      => (%d) ", (int)strlen (data + p));
 				for (i = 0; i < entry.size - 16; i++) {
 					const char ch = data[p + i];
 					if (ch == 0) {
-						r_cons_printf ("\n      => (%d) ", (int)strlen (data + i + p + 1));
+						r_cons_printf (core->cons, "\n      => (%d) ", (int)strlen (data + i + p + 1));
 					}
-					r_cons_printf ("%c", ch);
+					r_cons_printf (core->cons, "%c", ch);
 				}
 			}
-			r_cons_printf ("\n");
+			r_cons_printf (core->cons, "\n");
 			break;
 		case RPRJ_MODS: // modules
 			if (mode & MODE_LOG) {
@@ -600,7 +607,7 @@ static void prj_load(RCore *core, const char *file, int mode) {
 			break;
 		case RPRJ_CMDS:
 			if (mode & MODE_LOG) {
-				r_cons_printf ("    [\n");
+				r_cons_printf (core->cons, "    [\n");
 			}
 			while (r_buf_at (b) < next_entry) {
 				// this entry requires disabled sandbox
@@ -610,7 +617,7 @@ static void prj_load(RCore *core, const char *file, int mode) {
 					break;
 				}
 				if (mode & MODE_LOG) {
-					r_cons_printf ("      '%s'\n", script);
+					r_cons_printf (core->cons, "      '%s'\n", script);
 				}
 				if (mode & MODE_CMD) {
 					r_core_cmd0 (core, script);
@@ -618,7 +625,7 @@ static void prj_load(RCore *core, const char *file, int mode) {
 				free (script);
 			}
 			if (mode & MODE_LOG) {
-				r_cons_printf ("    ]\n");
+				r_cons_printf (core->cons, "    ]\n");
 			}
 			break;
 		case RPRJ_INFO:
@@ -628,11 +635,11 @@ static void prj_load(RCore *core, const char *file, int mode) {
 				const char *name = rprj_st_get (&st, cmds.name);
 				const char *user = rprj_st_get (&st, cmds.user);
 				if (mode & MODE_LOG) {
-					r_cons_printf ("    ProjectInfo {\n");
-					r_cons_printf ("      Name: %s\n", name);
-					r_cons_printf ("      User: %s\n", user);
-					//r_cons_printf ("      Date: %s\n", r_time_usecs_tostring (cmds.time));
-					r_cons_printf ("    }\n");
+					r_cons_printf (core->cons, "    ProjectInfo {\n");
+					r_cons_printf (core->cons, "      Name: %s\n", name);
+					r_cons_printf (core->cons, "      User: %s\n", user);
+					//r_cons_printf (core->cons, "      Date: %s\n", r_time_usecs_tostring (cmds.time));
+					r_cons_printf (core->cons, "    }\n");
 				}
 			}
 			break;
@@ -678,7 +685,7 @@ static void prj_load(RCore *core, const char *file, int mode) {
 							r_flag_set (core->flags, flag_name, va, flag.size);
 						}
 						// r_core_cmdf (core, "'f %s=0x%08"PFMT64x, flag_name, mod->vmin + flag.delta);
-						// r_cons_printf ("%d + %d = %s\n", (int)flag.mod, (int)flag.delta, flag_name);
+						// r_cons_printf (core->cons, "%d + %d = %s\n", (int)flag.mod, (int)flag.delta, flag_name);
 					} else {
 						eprintf ("Cant find map for %s\n", flag_name);
 					}
@@ -688,14 +695,14 @@ static void prj_load(RCore *core, const char *file, int mode) {
 			break;
 		}
 		if (mode & MODE_LOG) {
-			r_cons_printf ("  }\n");
+			r_cons_printf (core->cons, "  }\n");
 		}
 		// skip to the next entry
 		r_buf_seek (b, next_entry, SEEK_SET);
 		n++;
 	}
 	if (mode & MODE_LOG) {
-		r_cons_printf ("}\n");
+		r_cons_printf (core->cons, "}\n");
 	}
 	r_buf_free (b);
 }

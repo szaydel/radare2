@@ -101,9 +101,6 @@ R_API bool r_core_cmpwatch_add(RCore *core, ut64 addr, int size, const char *cmd
 	RCoreCmpWatcher *cmpw = r_core_cmpwatch_get (core, addr);
 	if (!cmpw) {
 		cmpw = R_NEW0 (RCoreCmpWatcher);
-		if (!cmpw) {
-			return false;
-		}
 		cmpw->addr = addr;
 	} else {
 		R_FREE (cmpw->odata);
@@ -195,13 +192,13 @@ R_API bool r_core_cmpwatch_show(RCore *core, ut64 addr, int mode) {
 		}
 		switch (mode) {
 		case '*': // print watchers as r2 commands
-			r_cons_printf ("cw 0x%08" PFMT64x " %d %s%s\n",
+			r_cons_printf (core->cons, "cw 0x%08" PFMT64x " %d %s%s\n",
 					w->addr, w->size, r_str_get (w->cmd),
 					changed? " # differs": "");
 			break;
 		case 'q': // quiet
 			if (changed) {
-				r_cons_printf ("0x%08" PFMT64x " has changed\n", w->addr);
+				r_cons_printf (core->cons, "0x%08" PFMT64x " has changed\n", w->addr);
 			}
 			break;
 		case 'j': // "cw"
@@ -231,25 +228,25 @@ R_API bool r_core_cmpwatch_show(RCore *core, ut64 addr, int mode) {
 			}
 			break;
 		default:
-			r_cons_printf ("0x%08" PFMT64x "%s\n", w->addr, changed? " modified": "");
-			r_cons_print ("  old: ");
+			r_cons_printf (core->cons, "0x%08" PFMT64x "%s\n", w->addr, changed? " modified": "");
+			r_cons_print (core->cons, "  old: ");
 			int i;
 			if (w->odata) {
 				for (i = 0; i < w->size; i++) {
-					r_cons_printf ("%02x", w->odata[i]);
+					r_cons_printf (core->cons, "%02x", w->odata[i]);
 				}
-				r_cons_print (" => new: ");
+				r_cons_print (core->cons, " => new: ");
 			}
 			for (i = 0; i < w->size; i++) {
-				r_cons_printf ("%02x", w->ndata[i]);
+				r_cons_printf (core->cons, "%02x", w->ndata[i]);
 			}
 			char *cmd_output = cwcmd (core, w);
 			if (cmd_output) {
-				r_cons_print ("\n  cmd: ");
-				r_cons_println (cmd_output);
+				r_cons_print (core->cons, "\n  cmd: ");
+				r_cons_println (core->cons, cmd_output);
 				free (cmd_output);
 			} else {
-				r_cons_newline ();
+				r_cons_newline (core->cons);
 			}
 			break;
 		}
@@ -260,7 +257,7 @@ R_API bool r_core_cmpwatch_show(RCore *core, ut64 addr, int mode) {
 		char *out;
 		pj_end (pj);
 		out = pj_drain (pj);
-		r_cons_println (out);
+		r_cons_println (core->cons, out);
 		free (out);
 	}
 
@@ -343,7 +340,7 @@ static int radare_compare_words(RCore *core, ut64 of, ut64 od, int len, int ws) 
 	int i;
 	bool useColor = r_config_get_i (core->config, "scr.color") != 0;
 	utAny v0, v1;
-	RConsPrintablePalette *pal = &r_cons_singleton ()->context->pal;
+	RConsPrintablePalette *pal = &core->cons->context->pal;
 	for (i = 0; i < len; i+=ws) {
 		memset (&v0, 0, sizeof (v0));
 		memset (&v1, 0, sizeof (v1));
@@ -354,21 +351,21 @@ static int radare_compare_words(RCore *core, ut64 of, ut64 od, int len, int ws) 
 		const char *colorEnd = useColor? Color_RESET: "";
 
 		if (useColor) {
-			r_cons_printf ("%s0x%08" PFMT64x"  "Color_RESET, pal->addr, of + i);
+			r_cons_printf (core->cons, "%s0x%08" PFMT64x"  "Color_RESET, pal->addr, of + i);
 		} else {
-			r_cons_printf ("0x%08" PFMT64x"  ", of + i);
+			r_cons_printf (core->cons, "0x%08" PFMT64x"  ", of + i);
 		}
 		switch (ws) {
 		case 1:
-			r_cons_printf ("%s0x%02x %c 0x%02x%s\n", color,
+			r_cons_printf (core->cons, "%s0x%02x %c 0x%02x%s\n", color,
 				(ut32)(v0.v8 & 0xff), ch, (ut32)(v1.v8 & 0xff), colorEnd);
 			break;
 		case 2:
-			r_cons_printf ("%s0x%04hx %c 0x%04hx%s\n", color,
+			r_cons_printf (core->cons, "%s0x%04hx %c 0x%04hx%s\n", color,
 				v0.v16, ch, v1.v16, colorEnd);
 			break;
 		case 4:
-			r_cons_printf ("%s0x%08"PFMT32x" %c 0x%08"PFMT32x"%s\n", color,
+			r_cons_printf (core->cons, "%s0x%08"PFMT32x" %c 0x%08"PFMT32x"%s\n", color,
 				v0.v32, ch, v1.v32, colorEnd);
 			//r_core_cmdf (core, "fd@0x%"PFMT64x, v0.v32);
 			if (v0.v32 != v1.v32) {
@@ -376,7 +373,7 @@ static int radare_compare_words(RCore *core, ut64 of, ut64 od, int len, int ws) 
 			}
 			break;
 		case 8:
-			r_cons_printf ("%s0x%016"PFMT64x" %c 0x%016"PFMT64x"%s\n",
+			r_cons_printf (core->cons, "%s0x%016"PFMT64x" %c 0x%016"PFMT64x"%s\n",
 				color, v0.v64, ch, v1.v64, colorEnd);
 			//r_core_cmdf (core, "fd@0x%"PFMT64x, v0.v64);
 			if (v0.v64 != v1.v64) {
@@ -412,12 +409,12 @@ static int radare_compare_unified(RCore *core, ut64 of, ut64 od, int len) {
 	for (i = 0; i < len; i += inc) {
 		min = R_MIN (16, (len - i));
 		if (!memcmp (f + i, d + i, min)) {
-			r_cons_printf ("  ");
+			r_cons_printf (core->cons, "  ");
 			r_print_hexdiff (core->print, of + i, f + i, of + i, f + i, min, 0);
 		} else {
-			r_cons_printf ("- ");
+			r_cons_printf (core->cons, "- ");
 			r_print_hexdiff (core->print, of + i, f + i, od + i, d + i, min, 0);
-			r_cons_printf ("+ ");
+			r_cons_printf (core->cons, "+ ");
 			r_print_hexdiff (core->print, od + i, d + i, of + i, f + i, min, 0);
 		}
 	}
@@ -449,13 +446,13 @@ static int radare_compare(RCore *core, const ut8 *f, const ut8 *d, int len, int 
 		}
 		switch (mode) {
 		case 0:
-			r_cons_printf ("0x%08"PFMT64x " (byte=%.2d)   %02x '%c'  ->  %02x '%c'\n",
+			r_cons_printf (core->cons, "0x%08"PFMT64x " (byte=%.2d)   %02x '%c'  ->  %02x '%c'\n",
 				core->addr + i, i + 1,
 				f[i], (IS_PRINTABLE (f[i]))? f[i]: ' ',
 				d[i], (IS_PRINTABLE (d[i]))? d[i]: ' ');
 			break;
 		case '*':
-			r_cons_printf ("wx %02x @ 0x%08"PFMT64x "\n",
+			r_cons_printf (core->cons, "wx %02x @ 0x%08"PFMT64x "\n",
 				d[i],
 				core->addr + i);
 			break;
@@ -480,7 +477,7 @@ static int radare_compare(RCore *core, const ut8 *f, const ut8 *d, int len, int 
 		pj_ki (pj, "total_bytes", len);
 		pj_end (pj); // End array
 		pj_end (pj); // End object
-		r_cons_println (pj_string (pj));
+		r_cons_println (core->cons, pj_string (pj));
 	}
 	return len - eq;
 }
@@ -507,6 +504,7 @@ static int cmd_cmp_watcher(RCore *core, const char *input) {
 		NULL
 	};
 
+	RCons *cons = core->cons;
 	ut64 addr = UT64_MAX;
 	int ret = 0;
 
@@ -558,7 +556,7 @@ static int cmd_cmp_watcher(RCore *core, const char *input) {
 		if (input[1]) {
 			addr = r_num_math (core->num, input + 2);
 		}
-		if (addr == UT64_MAX && !r_cons_yesno ('n', "Delete all watchers? (y/N)")) {
+		if (addr == UT64_MAX && !r_cons_yesno (cons, 'n', "Delete all watchers? (y/N)")) {
 			return 1;
 		}
 		if (!r_core_cmpwatch_del (core, addr) && addr) {
@@ -574,7 +572,7 @@ static int cmd_cmp_watcher(RCore *core, const char *input) {
 		if (input[1]) {
 			addr = r_num_math (core->num, input + 2);
 		}
-		if (addr == UT64_MAX && !r_cons_yesno ('n', "Revert all watchers? (y/N)")) {
+		if (addr == UT64_MAX && !r_cons_yesno (cons, 'n', "Revert all watchers? (y/N)")) {
 			return 1;
 		}
 
@@ -663,7 +661,7 @@ static int cmd_cmp_disasm(RCore *core, const char *input, int mode) {
 	int cols = r_config_get_i (core->config, "hex.cols") * 2;
 	ut64 off = r_num_math (core->num, input);
 	ut8 *buf = calloc (core->blocksize + 32, 1);
-	RConsPrintablePalette *pal = &r_cons_singleton ()->context->pal;
+	RConsPrintablePalette *pal = &core->cons->context->pal;
 	if (!buf) {
 		return false;
 	}
@@ -676,7 +674,7 @@ static int cmd_cmp_disasm(RCore *core, const char *input, int mode) {
 		char *b = r_core_cmd_strf (core, "pdc @ 0x%"PFMT64x, core->addr);
 		RDiff *d = r_diff_new ();
 		char *s = r_diff_buffers_unified (d, a, strlen(a), b, strlen(b));
-		r_cons_printf ("%s\n", s);
+		r_cons_printf (core->cons, "%s\n", s);
 		free (a);
 		free (b);
 		free (s);
@@ -702,12 +700,12 @@ static int cmd_cmp_disasm(RCore *core, const char *input, int mode) {
 				colpad[pos] = 0;
 			}
 			if (hascolor) {
-				r_cons_print (iseq? pal->graph_true: pal->graph_false);
+				r_cons_print (core->cons, iseq? pal->graph_true: pal->graph_false);
 			}
-			r_cons_printf (" 0x%08"PFMT64x "  %s %s", core->addr + i, opa, colpad);
-			r_cons_printf ("%c 0x%08"PFMT64x "  %s\n", iseq? '=': '!', off + j, opb);
+			r_cons_printf (core->cons, " 0x%08"PFMT64x "  %s %s", core->addr + i, opa, colpad);
+			r_cons_printf (core->cons, "%c 0x%08"PFMT64x "  %s\n", iseq? '=': '!', off + j, opb);
 			if (hascolor) {
-				r_cons_print (Color_RESET);
+				r_cons_print (core->cons, Color_RESET);
 			}
 			if (op.size < 1) {
 				op.size = 1;
@@ -736,19 +734,19 @@ static int cmd_cmp_disasm(RCore *core, const char *input, int mode) {
 			// show output
 			bool iseq = !strcmp (op.mnemonic, op2.mnemonic);
 			if (iseq) {
-				r_cons_printf (" 0x%08"PFMT64x "  %s\n",
+				r_cons_printf (core->cons, " 0x%08"PFMT64x "  %s\n",
 					core->addr + i, op.mnemonic);
 			} else {
 				if (hascolor) {
-					r_cons_print (pal->graph_false);
+					r_cons_print (core->cons, pal->graph_false);
 				}
-				r_cons_printf ("-0x%08"PFMT64x "  %s\n", core->addr + i, op.mnemonic);
+				r_cons_printf (core->cons, "-0x%08"PFMT64x "  %s\n", core->addr + i, op.mnemonic);
 				if (hascolor) {
-					r_cons_print (pal->graph_true);
+					r_cons_print (core->cons, pal->graph_true);
 				}
-				r_cons_printf ("+0x%08"PFMT64x "  %s\n", off + j, op2.mnemonic);
+				r_cons_printf (core->cons, "+0x%08"PFMT64x "  %s\n", off + j, op2.mnemonic);
 				if (hascolor) {
-					r_cons_print (Color_RESET);
+					r_cons_print (core->cons, Color_RESET);
 				}
 			}
 			if (op.size < 1) {
@@ -834,7 +832,7 @@ static int cmd_cp(void *data, const char *input) {
  * colored graph_false.
  */
 static int cmp_bits(RCore *core, ut64 addr) {
-	RConsPrintablePalette *pal = &r_cons_singleton ()->context->pal;
+	RConsPrintablePalette *pal = &core->cons->context->pal;
 	const bool use_color = r_config_get_b (core->config, "scr.color");
 	const char *color_end = use_color? Color_RESET: "";
 	int i;
@@ -851,7 +849,7 @@ static int cmp_bits(RCore *core, ut64 addr) {
 		char *n = r_str_newf ("0x%08" PFMT64x, core->addr);
 		const char *padding = r_str_pad (' ', strlen (n) - 10);
 		free (n);
-		r_cons_printf ("%s- offset -%s  7 6 5 4 3 2 1 0%s\n", color, padding, color_end);
+		r_cons_printf (core->cons, "%s- offset -%s  7 6 5 4 3 2 1 0%s\n", color, padding, color_end);
 	}
 
 	/* Set up bits and colors */
@@ -868,16 +866,16 @@ static int cmp_bits(RCore *core, ut64 addr) {
 		}
 	}
 
-	r_cons_printf ("%s0x%08" PFMT64x "%s  ", use_color? pal->graph_false: "", core->addr, color_end);
+	r_cons_printf (core->cons, "%s0x%08" PFMT64x "%s  ", use_color? pal->graph_false: "", core->addr, color_end);
 	for (i = 7; i >= 0; i--) {
-		r_cons_printf ("%s%d%s%s", a_colors[i], a_bits[i], color_end, i? " ": "");
+		r_cons_printf (core->cons, "%s%d%s%s", a_colors[i], a_bits[i], color_end, i? " ": "");
 	}
 
-	r_cons_printf ("\n%s0x%08" PFMT64x "%s  ", use_color? pal->graph_true: "", addr, color_end);
+	r_cons_printf (core->cons, "\n%s0x%08" PFMT64x "%s  ", use_color? pal->graph_true: "", addr, color_end);
 	for (i = 7; i >= 0; i--) {
-		r_cons_printf ("%s%d%s%s", b_colors[i], b_bits[i], color_end, i? " ": "");
+		r_cons_printf (core->cons, "%s%d%s%s", b_colors[i], b_bits[i], color_end, i? " ": "");
 	}
-	r_cons_newline ();
+	r_cons_newline (core->cons);
 
 	// 0 if equal, 1 if not equal
 	// same return pattern as ?==
@@ -956,7 +954,7 @@ static void _core_cmp_info_libs(RCore *core, int id0, int id1) {
 				found = true;
 			}
 		}
-		r_cons_printf ("%s%s\n", found? " ": "-", s);
+		r_cons_printf (core->cons, "%s%s\n", found? " ": "-", s);
 	}
 	r_list_foreach (s1, iter, s) {
 		bool found = false;
@@ -966,7 +964,7 @@ static void _core_cmp_info_libs(RCore *core, int id0, int id1) {
 			}
 		}
 		if (!found) {
-			r_cons_printf ("+%s\n", s);
+			r_cons_printf (core->cons, "+%s\n", s);
 		}
 	}
 	// r_list_free (s0);
@@ -995,7 +993,7 @@ static void _core_cmp_info_imports(RCore *core, int id0, int id1) {
 				found = true;
 			}
 		}
-		r_cons_printf ("%s%s\n", found? " ": "-", s_name);
+		r_cons_printf (core->cons, "%s%s\n", found? " ": "-", s_name);
 	}
 	r_list_foreach (s1, iter, s) {
 		const char *s_name = r_bin_name_tostring (s->name);
@@ -1007,7 +1005,7 @@ static void _core_cmp_info_imports(RCore *core, int id0, int id1) {
 			}
 		}
 		if (!found) {
-			r_cons_printf ("+%s\n", s_name);
+			r_cons_printf (core->cons, "+%s\n", s_name);
 		}
 	}
 	// r_list_free (s0);
@@ -1036,7 +1034,7 @@ static void _core_cmp_info_exports(RCore *core, int id0, int id1) {
 				found = true;
 			}
 		}
-		r_cons_printf ("%s%s\n", found? " ": "-", s_name);
+		r_cons_printf (core->cons, "%s%s\n", found? " ": "-", s_name);
 	}
 	r_list_foreach (s1, iter, s) {
 		const char *s_name = r_bin_name_tostring (s->name);
@@ -1048,7 +1046,7 @@ static void _core_cmp_info_exports(RCore *core, int id0, int id1) {
 			}
 		}
 		if (!found) {
-			r_cons_printf ("+%s\n", s_name);
+			r_cons_printf (core->cons, "+%s\n", s_name);
 		}
 	}
 	r_list_free (s0);
@@ -1077,7 +1075,7 @@ static void _core_cmp_info_symbols(RCore *core, int id0, int id1) {
 				found = true;
 			}
 		}
-		r_cons_printf ("%s%s\n", found? " ": "-", sname);
+		r_cons_printf (core->cons, "%s%s\n", found? " ": "-", sname);
 	}
 	r_list_foreach (s1, iter, s) {
 		bool found = false;
@@ -1089,7 +1087,7 @@ static void _core_cmp_info_symbols(RCore *core, int id0, int id1) {
 			}
 		}
 		if (!found) {
-			r_cons_printf ("+%s\n", sname);
+			r_cons_printf (core->cons, "+%s\n", sname);
 		}
 	}
 }
@@ -1144,9 +1142,9 @@ static void cmd_curl(RCore *core, const char *arg) {
 				? r_socket_http_post (arg, NULL, postdata, NULL, &len)
 				: r_socket_http_get (arg, NULL, NULL, &len);
 			if (s) {
-				r_cons_write (s, len);
+				r_cons_write (core->cons, s, len);
 				free (s);
-				r_cons_newline ();
+				r_cons_newline (core->cons);
 			}
 		} else {
 			r_core_cmd_help_match (core, help_msg_cu, "curl");
@@ -1214,7 +1212,7 @@ static int cmd_cmp(void *data, const char *input) {
 			if (*path == '$') {
 				char *v_str = r_core_slurp (core, path, NULL);
 				if (v_str) {
-					r_cons_println (v_str);
+					r_cons_println (core->cons, v_str);
 					free (v_str);
 				}
 			} else if (*path) {
@@ -1223,7 +1221,7 @@ static int cmd_cmp(void *data, const char *input) {
 				} else {
 					char *res = r_syscmd_cat (path);
 					if (res) {
-						r_cons_print (res);
+						r_cons_print (core->cons, res);
 						free (res);
 					}
 				}
@@ -1598,7 +1596,7 @@ r_cons_global (core->cons);
 		case '1': { // "cv1"
 			ut8 n = (ut8) r_num_math (core->num, input + 2);
 			if (block[0] == n) {
-				r_cons_printf ("0x%08"PFMT64x "\n", core->addr);
+				r_cons_printf (core->cons, "0x%08"PFMT64x "\n", core->addr);
 				r_core_return_value (core, 0);
 			} else {
 				r_core_return_value (core, 1);
@@ -1608,7 +1606,7 @@ r_cons_global (core->cons);
 		case '2': { // "cv2"
 			ut16 n = (ut16) r_num_math (core->num, input + 2);
 			if (core->blocksize >= 2 && *(ut16*)block == n) {
-				r_cons_printf ("0x%08"PFMT64x "\n", core->addr);
+				r_cons_printf (core->cons, "0x%08"PFMT64x "\n", core->addr);
 				r_core_return_value (core, 0);
 			} else {
 				r_core_return_value (core, 1);
@@ -1618,7 +1616,7 @@ r_cons_global (core->cons);
 		case '4': { // "cv4"
 			ut32 n = (ut32) r_num_math (core->num, input + 2);
 			if (core->blocksize >= 4 && *(ut32*)block == n) {
-				r_cons_printf ("0x%08"PFMT64x "\n", core->addr);
+				r_cons_printf (core->cons, "0x%08"PFMT64x "\n", core->addr);
 				r_core_return_value (core, 0);
 			} else {
 				r_core_return_value (core, 1);
@@ -1628,7 +1626,7 @@ r_cons_global (core->cons);
 		case '8': { // "cv8"
 			ut64 n = (ut64) r_num_math (core->num, input + 2);
 			if (core->blocksize >= 8 && *(ut64*)block == n) {
-				r_cons_printf ("0x%08"PFMT64x "\n", core->addr);
+				r_cons_printf (core->cons, "0x%08"PFMT64x "\n", core->addr);
 				r_core_return_value (core, 0);
 			} else {
 				r_core_return_value (core, 1);
@@ -1675,12 +1673,11 @@ r_cons_global (core->cons);
 		break;
 	case 'l': // "cl"
 		if (strchr (input, 'f')) {
-			r_cons_flush ();
+			r_cons_flush (core->cons);
 		} else if (input[1] == 0) {
-			r_cons_fill_line ();
-			// r_cons_clear_line (0);
+			r_cons_fill_line (core->cons);
 		} else if (!strchr (input, '0')) {
-			r_cons_clear00 ();
+			r_cons_clear00 (core->cons);
 		}
 		break;
 	case 'm': // "cmp"
