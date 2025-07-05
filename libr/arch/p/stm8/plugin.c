@@ -1,11 +1,11 @@
-/* radare - LGPL - Copyright 2024 - pancake */
+/* radare - LGPL - Copyright 2024-2025 - pancake */
 
 #define R_LOG_ORIGIN "arch.stm8"
 
 #include <r_arch.h>
 #include "gmtdisas/asm.c"
 
-static bool stm8_op(RArchSession *as, RAnalOp *op, RAnalOpMask mask) {
+static bool stm8_op(RArchSession *as, RAnalOp *op, RArchDecodeMask mask) {
 	int len = 0;
 	ut64 jump = UT64_MAX;
 	op->type = R_ANAL_OP_TYPE_ILL;
@@ -88,7 +88,7 @@ static int archinfo(RArchSession *as, ut32 q) {
 const RArchPlugin r_arch_plugin_stm8 = {
 	.meta = {
 		.name = "stm8",
-		.desc = "STM8 MCU microcontroller",
+		.desc = "STMicroelectronics 8-bit microcontroller unit",
 		.author = "pancake",
 		.license = "GPL-3.0-only",
 	},

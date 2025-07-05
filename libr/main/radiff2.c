@@ -84,7 +84,9 @@ static RCore *opencore(RadiffOptions *ro, const char *f) {
 	r_config_set_b (c->config, "io.va", ro->useva);
 	r_config_set_b (c->config, "scr.interactive", false);
 	r_list_foreach (ro->evals, iter, e) {
-		r_config_eval (c->config, e, false);
+		char *res = r_config_eval (c->config, e, false, NULL);
+		r_cons_println (c->cons, res);
+		free (res);
 	}
 	if (f) {
 		RIODesc *rfile = NULL;
@@ -128,7 +130,7 @@ static RCore *opencore(RadiffOptions *ro, const char *f) {
 		if (ro->zignatures) {
 			r_core_cmd0 (c, "zg");
 		}
-		r_kons_flush (c->cons);
+		r_cons_flush (c->cons);
 	}
 	// TODO: must enable io.va here if wanted .. r_config_set_i (c->config, "io.va", va);
 	return c;
@@ -149,18 +151,18 @@ static void readstr(char *s, int sz, const ut8 *buf, int len) {
 static int cb_xpatch(RDiff *d, void *user, RDiffOp *op) {
 	int i;
 	RadiffOptions *ro = (RadiffOptions*)user;
-	r_kons_printf (ro->cons, "@@ u8,u8,%%2x -0x%08"PFMT64x",%d, +0x%08"PFMT64x",%d @@\n",
+	r_cons_printf (ro->cons, "@@ u8,u8,%%2x -0x%08"PFMT64x",%d, +0x%08"PFMT64x",%d @@\n",
 			op->a_off + ro->baddr, op->a_len,
 			op->b_off + ro->baddr, op->b_len);
-	r_kons_printf (ro->cons, "- ");
+	r_cons_printf (ro->cons, "- ");
 	for (i = 0; i < op->a_len; i++) {
-		r_kons_printf (ro->cons, "%02x", op->a_buf[i]);
+		r_cons_printf (ro->cons, "%02x", op->a_buf[i]);
 	}
-	r_kons_printf (ro->cons, "\n+ ");
+	r_cons_printf (ro->cons, "\n+ ");
 	for (i = 0; i < op->b_len; i++) {
-		r_kons_printf (ro->cons, "%02x", op->b_buf[i]);
+		r_cons_printf (ro->cons, "%02x", op->b_buf[i]);
 	}
-	r_kons_newline (ro->cons);
+	r_cons_newline (ro->cons);
 	return 0;
 }
 
@@ -511,10 +513,10 @@ static void dump_cols(RadiffOptions *ro, ut8 *a, int as, ut8 *b, int bs, int w) 
 	}
 	switch (w) {
 	case 8:
-		r_cons_printf ("  offset     0 1 2 3 4 5 6 7 01234567    0 1 2 3 4 5 6 7 01234567\n");
+		r_cons_printf (ro->cons, "  offset     0 1 2 3 4 5 6 7 01234567    0 1 2 3 4 5 6 7 01234567\n");
 		break;
 	case 16:
-		r_cons_printf ("  offset     "
+		r_cons_printf (ro->cons, "  offset     "
 			"0 1 2 3 4 5 6 7 8 9 A B C D E F 0123456789ABCDEF    "
 			"0 1 2 3 4 5 6 7 8 9 A B C D E F 0123456789ABCDEF\n");
 		break;
@@ -522,9 +524,9 @@ static void dump_cols(RadiffOptions *ro, ut8 *a, int as, ut8 *b, int bs, int w) 
 		R_LOG_ERROR ("Invalid column width");
 		return;
 	}
-	r_kons_break_push (ro->cons, NULL, NULL);
+	r_cons_break_push (ro->cons, NULL, NULL);
 	for (i = 0; i < sz; i += w) {
-		if (r_kons_is_breaked (ro->cons)) {
+		if (r_cons_is_breaked (ro->cons)) {
 			break;
 		}
 		if (i + w >= sz) {
@@ -535,7 +537,7 @@ static void dump_cols(RadiffOptions *ro, ut8 *a, int as, ut8 *b, int bs, int w) 
 		if (eq) {
 			ctx--;
 			if (ctx == -1) {
-				r_kons_printf (ro->cons, "...\n");
+				r_cons_printf (ro->cons, "...\n");
 				continue;
 			}
 			if (ctx < 0) {
@@ -545,73 +547,73 @@ static void dump_cols(RadiffOptions *ro, ut8 *a, int as, ut8 *b, int bs, int w) 
 		} else {
 			ctx = DUMP_CONTEXT;
 		}
-		r_kons_printf (ro->cons, eq? Color_GREEN: Color_RED);
-		r_kons_printf (ro->cons, "0x%08x%c ", i, eq? ' ': '!');
-		r_kons_printf (ro->cons, Color_RESET);
+		r_cons_printf (ro->cons, eq? Color_GREEN: Color_RED);
+		r_cons_printf (ro->cons, "0x%08x%c ", i, eq? ' ': '!');
+		r_cons_printf (ro->cons, Color_RESET);
 		for (j = 0; j < w; j++) {
 			bool eq2 = a[i + j] == b[i + j];
 			if (!eq) {
-				r_cons_printf (eq2? Color_GREEN: Color_RED);
+				r_cons_printf (ro->cons, eq2? Color_GREEN: Color_RED);
 			}
-			r_cons_printf ("%02x", a[i + j]);
+			r_cons_printf (ro->cons, "%02x", a[i + j]);
 			if (!eq) {
-				r_cons_printf (Color_RESET);
+				r_cons_printf (ro->cons, Color_RESET);
 			}
 		}
 		for (j = 0; j < pad; j++) {
-			r_cons_printf ("  ");
+			r_cons_printf (ro->cons, "  ");
 		}
-		r_cons_printf (" ");
+		r_cons_printf (ro->cons, " ");
 		for (j = 0; j < w; j++) {
 			bool eq2 = a[i + j] == b[i + j];
 			if (!eq) {
-				r_cons_printf (eq2? Color_GREEN: Color_RED);
+				r_cons_printf (ro->cons, eq2? Color_GREEN: Color_RED);
 			}
-			r_cons_printf ("%c", IS_PRINTABLE (a[i + j])? a[i + j]: '.');
+			r_cons_printf (ro->cons, "%c", IS_PRINTABLE (a[i + j])? a[i + j]: '.');
 			if (!eq) {
-				r_cons_printf (Color_RESET);
+				r_cons_printf (ro->cons, Color_RESET);
 			}
 		}
 		for (j = 0; j < pad; j++) {
-			r_cons_printf (" ");
+			r_cons_printf (ro->cons, " ");
 		}
-		r_cons_printf ("   ");
+		r_cons_printf (ro->cons, "   ");
 		for (j = 0; j < w; j++) {
 			bool eq2 = a[i + j] == b[i + j];
 			if (!eq) {
-				r_cons_printf (eq2? Color_GREEN: Color_RED);
+				r_cons_printf (ro->cons, eq2? Color_GREEN: Color_RED);
 			}
-			r_cons_printf ("%02x", b[i + j]);
+			r_cons_printf (ro->cons, "%02x", b[i + j]);
 			if (!eq) {
-				r_cons_printf (Color_RESET);
+				r_cons_printf (ro->cons, Color_RESET);
 			}
 		}
 		for (j = 0; j < pad; j++) {
-			r_cons_printf ("  ");
+			r_cons_printf (ro->cons, "  ");
 		}
-		r_kons_printf (ro->cons, " ");
+		r_cons_printf (ro->cons, " ");
 		for (j = 0; j < w; j++) {
 			bool eq2 = a[i + j] == b[i + j];
 			if (!eq) {
-				r_cons_printf (eq2? Color_GREEN: Color_RED);
+				r_cons_printf (ro->cons, eq2? Color_GREEN: Color_RED);
 			}
-			r_kons_printf (ro->cons, "%c", IS_PRINTABLE (b[i + j])? b[i + j]: '.');
+			r_cons_printf (ro->cons, "%c", IS_PRINTABLE (b[i + j])? b[i + j]: '.');
 			if (!eq) {
-				r_kons_printf (ro->cons, Color_RESET);
+				r_cons_printf (ro->cons, Color_RESET);
 			}
 		}
-		r_kons_printf (ro->cons, "\n");
-		r_kons_flush (ro->cons);
+		r_cons_printf (ro->cons, "\n");
+		r_cons_flush (ro->cons);
 	}
-	r_kons_break_end (ro->cons);
-	r_cons_printf ("\n"Color_RESET);
-	r_kons_flush (ro->cons);
+	r_cons_break_end (ro->cons);
+	r_cons_printf (ro->cons, "\n"Color_RESET);
+	r_cons_flush (ro->cons);
 	if (as != bs) {
-		r_cons_printf ("...\n");
+		r_cons_printf (ro->cons, "...\n");
 	}
 }
 
-static void dump_cols_hexii(ut8 *a, int as, ut8 *b, int bs, int w) {
+static void dump_cols_hexii(RadiffOptions *ro, ut8 *a, int as, ut8 *b, int bs, int w) {
 	bool spacy = false;
 	ut32 sz = R_MIN (as, bs);
 	ut32 i, j;
@@ -620,10 +622,9 @@ static void dump_cols_hexii(ut8 *a, int as, ut8 *b, int bs, int w) {
 	if (!a || !b || as < 0 || bs < 0) {
 		return;
 	}
-	PrintfCallback p = r_cons_printf;
-	r_cons_break_push (NULL, NULL);
+	r_cons_break_push (ro->cons, NULL, NULL);
 	for (i = 0; i < sz; i += w) {
-		if (r_cons_is_breaked ()) {
+		if (r_cons_is_breaked (ro->cons)) {
 			break;
 		}
 		if (i + w >= sz) {
@@ -634,7 +635,7 @@ static void dump_cols_hexii(ut8 *a, int as, ut8 *b, int bs, int w) {
 		if (eq) {
 			ctx--;
 			if (ctx == -1) {
-				r_cons_printf ("...\n");
+				r_cons_printf (ro->cons, "...\n");
 				continue;
 			}
 			if (ctx < 0) {
@@ -644,71 +645,71 @@ static void dump_cols_hexii(ut8 *a, int as, ut8 *b, int bs, int w) {
 		} else {
 			ctx = DUMP_CONTEXT;
 		}
-		r_cons_printf (eq? Color_GREEN: Color_RED);
-		r_cons_printf ("0x%08x%c ", i, eq? ' ': '!');
-		r_cons_printf (Color_RESET);
+		r_cons_printf (ro->cons, eq? Color_GREEN: Color_RED);
+		r_cons_printf (ro->cons, "0x%08x%c ", i, eq? ' ': '!');
+		r_cons_printf (ro->cons, Color_RESET);
 		for (j = 0; j < w; j++) {
 			bool eq2 = a[i + j] == b[i + j];
 			if (!eq) {
-				r_cons_printf (eq2? Color_GREEN: Color_RED);
+				r_cons_printf (ro->cons, eq2? Color_GREEN: Color_RED);
 			}
 			ut8 ch = a[i + j];
 			if (spacy) {
-				p (" ");
+				r_cons_print (ro->cons, " ");
 			}
 			if (ch == 0x00) {
-				p ("  ");
+				r_cons_print (ro->cons, "  ");
 			} else if (ch == 0xff) {
-				p ("##");
+				r_cons_print (ro->cons, "##");
 			} else if (IS_PRINTABLE (ch)) {
-				p (".%c", ch);
+				r_cons_printf (ro->cons, ".%c", ch);
 			} else {
-				p ("%02x", ch);
+				r_cons_printf (ro->cons, "%02x", ch);
 			}
 			if (!eq) {
-				r_cons_printf (Color_RESET);
+				r_cons_printf (ro->cons, Color_RESET);
 			}
 		}
 		for (j = 0; j < pad; j++) {
-			r_cons_printf ("  ");
+			r_cons_printf (ro->cons, "  ");
 		}
 		for (j = 0; j < pad; j++) {
-			r_cons_printf (" ");
+			r_cons_printf (ro->cons, " ");
 		}
-		r_cons_printf ("   ");
+		r_cons_printf (ro->cons, "   ");
 		for (j = 0; j < w; j++) {
 			bool eq2 = a[i + j] == b[i + j];
 			if (!eq) {
-				r_cons_printf (eq2? Color_GREEN: Color_RED);
+				r_cons_printf (ro->cons, eq2? Color_GREEN: Color_RED);
 			}
 			ut8 ch = b[i + j];
 			if (spacy) {
-				p (" ");
+				r_cons_print (ro->cons, " ");
 			}
 			if (ch == 0x00) {
-				p ("  ");
+				r_cons_print (ro->cons, "  ");
 			} else if (ch == 0xff) {
-				p ("##");
+				r_cons_print (ro->cons, "##");
 			} else if (IS_PRINTABLE (ch)) {
-				p (".%c", ch);
+				r_cons_printf (ro->cons, ".%c", ch);
 			} else {
-				p ("%02x", ch);
+				r_cons_printf (ro->cons, "%02x", ch);
 			}
 			if (!eq) {
-				r_cons_printf (Color_RESET);
+				r_cons_printf (ro->cons, Color_RESET);
 			}
 		}
 		for (j = 0; j < pad; j++) {
-			r_cons_printf ("  ");
+			r_cons_printf (ro->cons, "  ");
 		}
-		r_cons_printf ("\n");
-		r_cons_flush ();
+		r_cons_printf (ro->cons, "\n");
+		r_cons_flush (ro->cons);
 	}
-	r_cons_break_end ();
-	r_cons_printf ("\n"Color_RESET);
-	r_cons_flush ();
+	r_cons_break_end (ro->cons);
+	r_cons_printf (ro->cons, "\n"Color_RESET);
+	r_cons_flush (ro->cons);
 	if (as != bs) {
-		r_cons_printf ("...\n");
+		r_cons_printf (ro->cons, "...\n");
 	}
 }
 
@@ -961,15 +962,16 @@ static ut8 *get_strings(RCore *c, int *len) {
 }
 
 static char *get_graph_commands(RCore *c, ut64 off) {
-	bool tmp_html = r_cons_context ()->is_html;
-	r_cons_context ()->is_html = false;
-	r_cons_push ();
+	RConsContext *ctx = c->cons->context;
+	bool tmp_html = ctx->is_html;
+	ctx->is_html = false;
+	r_cons_push (c->cons);
 	r_core_anal_graph (c, off, R_CORE_ANAL_GRAPHBODY | R_CORE_ANAL_GRAPHDIFF |  R_CORE_ANAL_STAR);
-	const char *static_str = r_cons_get_buffer ();
+	const char *static_str = r_cons_get_buffer (c->cons, NULL);
 	char *retstr = strdup (r_str_get (static_str));
-	r_cons_pop ();
-	r_cons_echo (NULL);
-	r_cons_context ()->is_html = tmp_html;
+	r_cons_pop (c->cons);
+	r_cons_echo (c->cons, NULL);
+	ctx->is_html = tmp_html;
 	return retstr;
 }
 
@@ -977,10 +979,10 @@ static void __generate_graph(RCore *c, ut64 off) {
 	R_RETURN_IF_FAIL (c);
 	char *ptr = get_graph_commands (c, off);
 	char *str = ptr;
-	r_cons_break_push (NULL, NULL);
+	r_cons_break_push (c->cons, NULL, NULL);
 	if (str) {
 		for (;;) {
-			if (r_cons_is_breaked ()) {
+			if (r_cons_is_breaked (c->cons)) {
 				break;
 			}
 			char *eol = strchr (ptr, '\n');
@@ -1003,7 +1005,7 @@ static void __generate_graph(RCore *c, ut64 off) {
 		}
 		free (str);
 	}
-	r_cons_break_pop ();
+	r_cons_break_pop (c->cons);
 }
 
 static void __print_diff_graph(RCore *c, ut64 off, int gmode) {
@@ -1027,7 +1029,7 @@ static void __print_diff_graph(RCore *c, ut64 off, int gmode) {
 	case GRAPH_INTERACTIVE_MODE:
 		__generate_graph (c, off);
 		r_core_agraph_print (c, use_utf8, "v");
-		r_cons_reset_colors ();
+		r_cons_reset_colors (c->cons);
 		break;
 	case GRAPH_SDB_MODE:
 		__generate_graph (c, off);
@@ -1047,7 +1049,7 @@ static void __print_diff_graph(RCore *c, ut64 off, int gmode) {
 	default:
 		__generate_graph (c, off);
 		r_core_agraph_print (c, use_utf8, "");
-		r_cons_reset_colors ();
+		r_cons_reset_colors (c->cons);
 		break;
 	}
 }
@@ -1059,14 +1061,17 @@ static void radiff_options_init(RadiffOptions *ro) {
 	ro->evals = r_list_newf (NULL);
 	ro->mode = MODE_DIFF;
 	ro->gmode = GRAPH_DEFAULT_MODE;
-	ro->cons = r_cons_new ();
+	ro->cons = r_cons_singleton ();
+	if (!ro->cons) {
+		ro->cons = r_cons_new ();
+	}
 }
 
 static void radiff_options_fini(RadiffOptions *ro) {
 	r_list_free (ro->runcmd);
 	r_list_free (ro->evals);
 	r_core_free (ro->core);
-	r_kons_free (ro->cons);
+	r_cons_free2 (ro->cons);
 }
 
 static void fileobj(RadiffOptions *ro, const char *ro_file, const ut8 *buf, size_t sz) {
@@ -1425,6 +1430,7 @@ R_API int r_main_radiff2(int argc, const char **argv) {
 			// printf ("%s\n", opt.arg);
 			break;
 		case 'T': // imho `t <=> T`
+			R_LOG_WARN ("Threading support is experimental and known to be crashy");
 			ro.thready = true;
 			// printf ("%s\n", opt.arg);
 			break;
@@ -1632,11 +1638,11 @@ R_API int r_main_radiff2(int argc, const char **argv) {
 			bufb = get_strings (c2, &sz);
 			szb = sz;
 		}
-// r_kons_printf (c2->cons, "PENE\n");
+// r_cons_printf (c2->cons, "PENE\n");
 		if (ro.mode == MODE_CODE || ro.mode == MODE_GRAPH) {
-			r_kons_flush (c->cons);
-			r_kons_flush (c2->cons);
-			r_kons_flush (ro.cons);
+			r_cons_flush (c->cons);
+			r_cons_flush (c2->cons);
+			r_cons_flush (ro.cons);
 		}
 		r_core_free (c);
 		r_core_free (c2);
@@ -1670,23 +1676,23 @@ R_API int r_main_radiff2(int argc, const char **argv) {
 	case MODE_XPATCH:
 		d = r_diff_new ();
 		r_diff_set_delta (d, delta);
-		r_kons_printf (ro.cons, "--- %s\n", ro.file);
-		r_kons_printf (ro.cons, "+++ %s\n", ro.file2);
+		r_cons_printf (ro.cons, "--- %s\n", ro.file);
+		r_cons_printf (ro.cons, "+++ %s\n", ro.file2);
 		r_diff_set_callback (d, &cb_xpatch, &ro);
 		r_diff_buffers (d, bufa, (ut32)sza, bufb, (ut32)szb);
-		r_kons_flush (ro.cons);
+		r_cons_flush (ro.cons);
 		break;
 	case MODE_COLSII:
 		if (!c && !r_list_empty (ro.evals)) {
 			c = opencore (&ro, NULL);
 		}
-		dump_cols_hexii (bufa, (int)sza, bufb, (int)szb, (r_cons_get_size (NULL) > 112)? 16: 8);
+		dump_cols_hexii (&ro, bufa, (int)sza, bufb, (int)szb, (r_cons_get_size (ro.cons, NULL) > 112)? 16: 8);
 		break;
 	case MODE_COLS:
 		if (!c && !r_list_empty (ro.evals)) {
 			c = opencore (&ro, NULL);
 		}
-		dump_cols (&ro, bufa, (int)sza, bufb, (int)szb, (r_cons_get_size (NULL) > 112)? 16: 8);
+		dump_cols (&ro, bufa, (int)sza, bufb, (int)szb, (r_cons_get_size (ro.cons, NULL) > 112)? 16: 8);
 		break;
 	case MODE_DIFF:
 	case MODE_DIFF_STRS:
@@ -1723,7 +1729,7 @@ R_API int r_main_radiff2(int argc, const char **argv) {
 			// r_diff_buffers (d, bufa, (ut32)sza, bufb, (ut32)szb);
 			if (ro.pdc) {
 				char *res = r_diff_buffers_unified (d, bufa, (ut32)sza, bufb, (ut32)szb);
-				r_kons_printf (ro.cons, "%s\n", res);
+				r_cons_printf (ro.cons, "%s\n", res);
 				free (res);
 			} else {
 				r_diff_buffers (d, bufa, (ut32)sza, bufb, (ut32)szb);

@@ -27,12 +27,9 @@
 #include <r_util.h>
 #include <rvc.h>
 #include <r_util/r_print.h>
-#include <r_crypto.h>
+#include <r_muta.h>
 #include <r_bind.h>
 #include <r_codemeta.h>
-
-// TODO: this var should be 1 at some point :D
-#define SHELLFILTER 0
 
 #ifdef __cplusplus
 extern "C" {
@@ -97,13 +94,20 @@ typedef enum {
 	R_CORE_VISUAL_MODE_CD = 4
 } RCoreVisualMode;
 
-// R2_600 - coresession
+typedef struct r_core_plugin_session_t {
+	RCore *core;
+	struct r_core_plugin_t *plugin;
+	void *data; // plugin instance data
+} RCorePluginSession;
+
+typedef bool (*RCorePluginLife) (RCorePluginSession *ctx);
+typedef bool (*RCorePluginCall) (RCorePluginSession *ctx, const char *input);
+
 typedef struct r_core_plugin_t {
 	RPluginMeta meta;
-	RCmdCb call; // returns true if command was handled, false otherwise.
-	RCmdCb init; // XXX needs a context to store user data and return bool instead of int! RCmdCb is wrong
-	RCmdCb fini;
-	void *data; // required for rlang-python
+	RCorePluginLife init;
+	RCorePluginLife fini;
+	RCorePluginCall call;
 } RCorePlugin;
 
 typedef struct r_core_rtr_host_t {
@@ -345,7 +349,7 @@ struct r_core_t {
 	bool vmode; // is r2 in visual or panels mode?
 	/* files */
 	RCons *cons;
-	RCrypto *crypto;
+	RMuta *muta;
 	RIO *io;
 	RNum *num;
 	ut64 rc; // command's return code .. related to num->value;
@@ -372,6 +376,7 @@ struct r_core_t {
 	RPanelsRoot *panels_root;
 	RPanels* panels;
 	RList *cmdqueue;
+	RMagic *magic;
 	char *lastcmd;
 	char *cmdlog;
 	bool cfglog; // cfg.corelog
@@ -518,7 +523,7 @@ R_API ut64 r_core_pava(RCore *core, ut64 addr);
 R_API int r_core_cmd(RCore *core, const char *cmd, bool log);
 R_API int r_core_cmd_task_sync(RCore *core, const char *cmd, bool log);
 R_API char *r_core_editor(const RCore *core, const char *file, const char *str);
-R_API int r_core_fgets(char *buf, int len);
+R_API int r_core_fgets(RCons *cons, char *buf, int len);
 R_API RFlagItem *r_core_flag_get_by_spaces(RFlag *f, bool prionospace, ut64 off);
 R_API int r_core_cmdf(RCore *core, const char *fmt, ...) R_PRINTF_CHECK(2, 3);
 R_API int r_core_cmdf_at(RCore *core, ut64 addr, const char *fmt, ...) R_PRINTF_CHECK(3, 4);
@@ -564,7 +569,7 @@ R_API void r_core_visual_toggle_decompiler_disasm(RCore *core, bool for_graph, b
 R_API void r_core_visual_applyDisMode(RCore *core, int disMode);
 R_API void r_core_visual_applyHexMode(RCore *core, int hexMode);
 R_API int r_core_visual_refs(RCore *core, bool xref, bool fcnInsteadOfAddr);
-R_API void r_core_visual_append_help(RStrBuf *p, const char *title, const char * const *help);
+R_API void r_core_visual_append_help(RCore *core, RStrBuf *p, const char *title, const char * const *help);
 R_API bool r_core_prevop_addr(RCore* core, ut64 start_addr, int numinstrs, ut64* prev_addr);
 R_API ut64 r_core_prevop_addr_force(RCore *core, ut64 start_addr, int numinstrs);
 R_API bool r_core_visual_hudstuff(RCore *core);
@@ -695,8 +700,8 @@ R_API void r_core_anal_fcn_merge(RCore *core, ut64 addr, ut64 addr2);
 R_API const char *r_core_anal_optype_colorfor(RCore *core, ut64 addr, ut8 ch, bool verbose);
 R_API ut64 r_core_anal_address(RCore *core, ut64 addr);
 R_API void r_core_anal_undefine(RCore *core, ut64 off);
-R_API void r_core_anal_hint_print(RAnal* a, ut64 addr, int mode);
-R_API void r_core_anal_hint_list(RAnal *a, int mode);
+R_API void r_core_anal_hint_print(RCore* core, ut64 addr, int mode);
+R_API void r_core_anal_hint_list(RCore *core, int mode);
 R_API int r_core_anal_search(RCore *core, ut64 from, ut64 to, ut64 ref, int mode);
 R_API int r_core_anal_search_xrefs(RCore *core, ut64 from, ut64 to, PJ *pj, int rad);
 R_API int r_core_anal_data(RCore *core, ut64 addr, int count, int depth, int wordsize);
@@ -722,7 +727,7 @@ R_API ut64 r_core_anal_fcn_list_size(RCore *core);
 R_API void r_core_anal_fcn_labels(RCore *core, RAnalFunction *fcn, int rad);
 R_API int r_core_anal_fcn_clean(RCore *core, ut64 addr);
 R_API int r_core_print_bb_custom(RCore *core, RAnalFunction *fcn);
-R_API int r_core_anal_graph(RCore *core, ut64 addr, int opts);
+R_API bool r_core_anal_graph(RCore *core, ut64 addr, int opts);
 R_API int r_core_anal_graph_fcn(RCore *core, char *input, int opts);
 R_API RList* r_core_anal_graph_to(RCore *core, ut64 addr, int n);
 R_API int r_core_anal_ref_list(RCore *core, int rad);
@@ -1080,8 +1085,10 @@ R_API void r_core_anal_propagate_noreturn(RCore *core, ut64 addr);
 extern RCorePlugin r_core_plugin_java;
 extern RCorePlugin r_core_plugin_a2f;
 extern RCorePlugin r_core_plugin_prj;
+extern RCorePlugin r_core_plugin_writedwarf;
 extern RCorePlugin r_core_plugin_sixref;
 extern RCorePlugin r_core_plugin_agD;
+
 R_API bool r_core_plugin_init(RCmd *cmd);
 R_API bool r_core_plugin_add(RCmd *cmd, RCorePlugin *plugin);
 R_API bool r_core_plugin_remove(RCmd *cmd, RCorePlugin *plugin);

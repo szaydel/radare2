@@ -32,9 +32,10 @@ extern int backtrace_symbols_fd(void**, size_t, int);
 #include <r_util.h>
 #include <r_lib.h>
 
-static R_TH_LOCAL char** env = NULL;
-static R_TH_LOCAL char *prefix = NULL;
-static R_TH_LOCAL bool unsignable = false;
+static R_TH_LOCAL char** Genv = NULL;
+static R_TH_LOCAL char *Gprefix = NULL;
+static R_TH_LOCAL char *Gr2prefix = NULL;
+static R_TH_LOCAL bool Gunsignable = false; // OK
 
 #if (__linux__ && __GNU_LIBRARY__) || defined(NETBSD_WITH_BACKTRACE) || \
   defined(FREEBSD_WITH_BACKTRACE) || __DragonFly__ || __sun
@@ -145,7 +146,7 @@ static const struct {const char* name; ut64 bit;} arch_bit_array[] = {
 };
 
 R_API void r_sys_signable(bool v) {
-	unsignable = !v;
+	Gunsignable = !v;
 }
 
 R_API int r_sys_fork(void) {
@@ -176,7 +177,7 @@ R_API int r_sys_sigaction(int *sig, void(*handler)(int)) {
 #if WANT_DEBUGSTUFF
 	struct sigaction sigact = { };
 	int ret, i;
-	if (unsignable) {
+	if (Gunsignable) {
 		return -1;
 	}
 
@@ -203,7 +204,7 @@ R_API int r_sys_sigaction(int *sig, void(*handler)(int)) {
 }
 #else
 R_API int r_sys_sigaction(int *sig, void(*handler)(int)) {
-	if (unsignable) {
+	if (Gunsignable) {
 		return -1;
 	}
 	if (!sig) {
@@ -431,7 +432,7 @@ R_API bool r_sys_clearenv(void) {
 
 R_API int r_sys_setenv(const char *key, const char *value) {
 	if (!r_sandbox_check (R_SANDBOX_GRAIN_ENVIRON)) {
-		return false;
+		return -1;
 	}
 	if (!key) {
 		return 0;
@@ -443,6 +444,10 @@ R_API int r_sys_setenv(const char *key, const char *value) {
 	}
 	return setenv (key, value, 1);
 #elif R2__WINDOWS__
+	if (!value) {
+		SetEnvironmentVariableA(key, NULL);
+		return 0;
+	}
 	LPTSTR key_ = r_sys_conv_utf8_to_win (key);
 	LPTSTR value_ = r_sys_conv_utf8_to_win (value);
 	int ret = SetEnvironmentVariable (key_, value_);
@@ -456,6 +461,49 @@ R_API int r_sys_setenv(const char *key, const char *value) {
 #pragma message("r_sys_setenv : unimplemented for this platform")
 	return 0;
 #endif
+}
+
+R_API int r_sys_setenv2(const char *key, const ut8 *value, size_t len) {
+	if (!r_sandbox_check (R_SANDBOX_GRAIN_ENVIRON)) {
+		return -1;
+	}
+	if (!key) {
+		return 0;
+	}
+	if (!value) {
+		r_sys_setenv (key, NULL);
+		return 0;
+	}
+	ut8 *buf = malloc (len + 1);
+	ut8 *zeroes = calloc (1, len);
+	memcpy (buf, value, len);
+	size_t i = 0;
+	bool nullbytes = false;
+	for (i = 0; i < len; i++) {
+		if (!buf[i]) {
+			buf[i] = 'X';
+			zeroes[i] = 1;
+			nullbytes = true;
+		}
+	}
+	buf[len] = 0;
+	if (r_sys_setenv (key, (char *)buf) != 0) {
+		free (zeroes);
+		free (buf);
+		return -1;
+	}
+	if (nullbytes) {
+		R_LOG_WARN ("Environment corrupted after null bytes injected via r_sys_setenv2");
+	}
+	char *p = getenv (key);
+	for (i = 0; i < len; i++) {
+		if (zeroes[i]) {
+			p[i] = 0;
+		}
+	}
+	free (zeroes);
+	free (buf);
+	return 0;
 }
 
 R_API int r_sys_setenv_sep(const char *key, const char *value, bool prefix) {
@@ -1321,22 +1369,22 @@ R_API char **r_sys_get_environ(void) {
 		return NULL;
 	}
 #if __APPLE__ && !HAVE_ENVIRON
-	env = *_NSGetEnviron();
+	Genv = *_NSGetEnviron();
 #else
-	env = environ;
+	Genv = environ;
 #endif
 	// return environ if available??
-	if (!env) {
-		env = r_lib_dl_sym (NULL, "environ");
+	if (!Genv) {
+		Genv = r_lib_dl_sym (NULL, "environ");
 	}
-	return env;
+	return Genv;
 }
 
 R_API void r_sys_set_environ(char **e) {
 	if (!r_sandbox_check (R_SANDBOX_GRAIN_ENVIRON)) {
 		return;
 	}
-	env = e;
+	Genv = e;
 }
 
 R_API char *r_sys_whoami(void) {
@@ -1414,32 +1462,29 @@ R_API bool r_sys_tts(const char *txt, bool bg) {
 	return false;
 }
 
-// leaks and globs
-static R_TH_LOCAL char *r2_prefix = NULL;
-
 R_API const char *r_sys_prefix(const char *pfx) {
-	if (!r2_prefix) {
-		r2_prefix = r_sys_getenv ("R2_PREFIX");
-		if (R_STR_ISEMPTY (r2_prefix)) {
-			free (r2_prefix);
-			r2_prefix = strdup (R2_PREFIX);
+	if (!Gr2prefix) {
+		Gr2prefix = r_sys_getenv ("R2_PREFIX");
+		if (R_STR_ISEMPTY (Gr2prefix)) {
+			free (Gr2prefix);
+			Gr2prefix = strdup (R2_PREFIX);
 		}
 	}
-	if (!prefix) {
+	if (!Gprefix) {
 #if R2__WINDOWS__
-		prefix = r_sys_get_src_dir_w32 ();
-		if (!prefix) {
-			prefix = strdup (r2_prefix);
+		Gprefix = r_sys_get_src_dir_w32 ();
+		if (!Gprefix) {
+			Gprefix = strdup (Gr2prefix);
 		}
 #else
-		prefix = strdup (r2_prefix);
+		Gprefix = strdup (Gr2prefix);
 #endif
 	}
 	if (pfx) {
-		free (prefix);
-		prefix = strdup (pfx);
+		free (Gprefix);
+		Gprefix = strdup (pfx);
 	}
-	return prefix;
+	return Gprefix;
 }
 
 R_API RSysInfo *r_sys_info(void) {

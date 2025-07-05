@@ -250,7 +250,8 @@ static RRunProfile* _get_run_profile(RIO *io, int bits, char **argv) {
 	}
 	rp->_program = strdup (argv[0]);
 
-	if (io->runprofile && *io->runprofile) {
+	const char *runprofile = io->runprofile;
+	if (R_STR_ISNOTEMPTY (runprofile)) {
 		if (!r_run_parsefile (rp, io->runprofile)) {
 			R_LOG_ERROR ("Can't find profile '%s'", io->runprofile);
 			r_run_free (rp);
@@ -401,14 +402,14 @@ static int platform_fork_and_ptraceme(RIO *io, int bits, const char *cmd) {
 			r_sys_perror ("waitpid");
 			return -1;
 		}
-		bed = r_kons_sleep_begin (cons);
+		bed = r_cons_sleep_begin (cons);
 		usleep (100000);
-		r_kons_sleep_end (cons, bed);
-	} while (ret != child_pid && !r_kons_is_breaked (cons));
+		r_cons_sleep_end (cons, bed);
+	} while (ret != child_pid && !r_cons_is_breaked (cons));
 	if (!WIFSTOPPED (status)) {
 		return -1;
 	}
-	if (WEXITSTATUS (status) == MAGIC_EXIT || r_kons_is_breaked (cons)) {
+	if (WEXITSTATUS (status) == MAGIC_EXIT || r_cons_is_breaked (cons)) {
 		R_LOG_INFO ("Killing child process %d due to an error", (int)child_pid);
 		kill (child_pid, SIGSTOP);
 		return -1;

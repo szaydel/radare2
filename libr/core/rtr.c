@@ -1,4 +1,4 @@
-/* radare - Copyright 2009-2024 - pancake, nibble */
+/* radare - Copyright 2009-2025 - pancake, nibble */
 
 #include "r_core.h"
 #include "r_socket.h"
@@ -103,12 +103,12 @@ static char *rtrcmd(TextLog T, const char *str) {
 static void showcursor(RCore *core, int x) {
 	RCons *cons = core->cons;
 	if (core->vmode) {
-		r_kons_show_cursor (cons, x);
-		r_kons_enable_mouse (cons, x? r_config_get_b (core->config, "scr.wheel"): false);
+		r_cons_show_cursor (cons, x);
+		r_cons_enable_mouse (cons, x? r_config_get_b (core->config, "scr.wheel"): false);
 	} else {
-		r_kons_enable_mouse (cons, false);
+		r_cons_enable_mouse (cons, false);
 	}
-	r_kons_flush (cons);
+	r_cons_flush (cons);
 }
 
 // TODO: rename /name to /nick or /so?
@@ -123,7 +123,7 @@ static void rtr_textlog_chat(RCore *core, TextLog T) {
 	R_LOG_INFO ("Type '/help' for commands and ^D to quit:");
 	char *oldprompt = strdup (core->cons->line->prompt);
 	snprintf (prompt, sizeof (prompt) - 1, "[%s]> ", me);
-	r_line_set_prompt (core->cons, prompt);
+	r_line_set_prompt (core->cons->line, prompt);
 	ret = rtrcmd (T, msg);
 	for (;;) {
 		if (lastmsg >= 0) {
@@ -132,7 +132,7 @@ static void rtr_textlog_chat(RCore *core, TextLog T) {
 			strcpy (msg, "T");
 		}
 		ret = rtrcmd (T, msg);
-		r_cons_println (ret);
+		r_cons_println (core->cons, ret);
 		free (ret);
 		ret = rtrcmd (T, "Tl");
 		lastmsg = atoi (ret)-1;
@@ -150,17 +150,17 @@ static void rtr_textlog_chat(RCore *core, TextLog T) {
 			eprintf ("/clear          clear text log messages\n");
 		} else if (!strncmp (buf, "/nick ", 6)) {
 			char *m = r_str_newf ("* '%s' is now known as '%s'", me, buf+6);
-			r_cons_println (m);
+			r_cons_println (core->cons, m);
 			r_core_log_add (core, m);
 			r_config_set (core->config, "cfg.user", buf+6);
 			me = r_config_get (core->config, "cfg.user");
 			snprintf (prompt, sizeof (prompt) - 1, "[%s]> ", me);
-			r_line_set_prompt (core->cons, prompt);
+			r_line_set_prompt (core->cons->line, prompt);
 			free (m);
 		} else if (!strcmp (buf, "/log")) {
 			char *ret = rtrcmd (T, "T");
 			if (ret) {
-				r_cons_println (ret);
+				r_cons_println (core->cons, ret);
 				free (ret);
 			}
 		} else if (!strcmp (buf, "/clear")) {
@@ -177,7 +177,7 @@ static void rtr_textlog_chat(RCore *core, TextLog T) {
 		}
 	}
 beach:
-	r_line_set_prompt (core->cons, oldprompt);
+	r_line_set_prompt (core->cons->line, oldprompt);
 	free (oldprompt);
 }
 
@@ -186,7 +186,7 @@ R_API int r_core_rtr_http_stop(RCore *u) {
 	const int timeout = 1; // 1 second
 
 #if R2__WINDOWS__
-	r_socket_http_server_set_breaked (&r_cons_context ()->breaked);
+	r_socket_http_server_set_breaked (&core->cons->context->breaked);
 #endif
 	core->http_up = false;
 	if (((size_t)u) > 0xff) {
@@ -733,11 +733,11 @@ R_API void r_core_rtr_list(RCore *core, int mode) {
 			pj_ks (pj, "file", rtr_host[i].file);
 			pj_end (pj);
 		} else if (mode == '*') {
-			r_cons_printf ("# %d fd:%i %s://%s:%i/%s\n",
+			r_cons_printf (core->cons, "# %d fd:%i %s://%s:%i/%s\n",
 				i, rtr_host[i].fd->fd, proto, rtr_host[i].host,
 				rtr_host[i].port, rtr_host[i].file);
 		} else {
-			r_cons_printf ("%d fd:%i %s://%s:%i/%s\n",
+			r_cons_printf (core->cons, "%d fd:%i %s://%s:%i/%s\n",
 				i, rtr_host[i].fd->fd, proto, rtr_host[i].host,
 				rtr_host[i].port, rtr_host[i].file);
 		}
@@ -745,7 +745,7 @@ R_API void r_core_rtr_list(RCore *core, int mode) {
 	if (pj) {
 		pj_end (pj);
 		char *s = pj_drain (pj);
-		r_cons_println (s);
+		r_cons_println (core->cons, s);
 		free (s);
 	}
 }
@@ -942,7 +942,7 @@ R_API void r_core_rtr_event(RCore *core, const char *input) {
 		// TODO: support udp, tcp, rap, ...
 #if R2__UNIX__ && !__wasi__
 		char *f = r_file_temp ("errmsg");
-		r_cons_println (f);
+		r_cons_println (core->cons, f);
 		r_file_rm (f);
 		errmsg_tmpfile = strdup (f);
 		int e = mkfifo (f, 0644);
@@ -978,20 +978,20 @@ static bool r_core_rtr_rap_run(RCore *core, const char *input) {
 	char *file = r_str_newf ("rap://%s", input);
 	int flags = R_PERM_RW;
 	RIODesc *fd = r_io_open_nomap (core->io, file, flags, 0644);
+	RConsContext *c = core->cons->context;
 	if (fd) {
 		if (r_io_is_listener (core->io)) {
 			if (!r_core_serve (core, fd)) {
-				r_cons_context ()->breaked = true;
+				c->breaked = true;
 			}
 			r_io_desc_close (fd);
 			// avoid double free, we are not the owners of this fd so we can't destroy it
 			//r_io_desc_free (fd);
 		}
 	} else {
-		r_cons_context ()->breaked = true;
+		c->breaked = true;
 	}
-	return !r_cons_context ()->breaked;
-	// r_core_cmdf (core, "o rap://%s", input);
+	return !c->breaked;
 }
 
 static RThreadFunctionRet r_core_rtr_rap_thread(RThread *th) {
@@ -1018,9 +1018,9 @@ R_API void r_core_rtr_cmd(RCore *core, const char *input) {
 	}
 	// "=:"
 	if (*input == ':' && !strchr (input + 1, ':')) {
-		void *bed = r_cons_sleep_begin ();
+		void *bed = r_cons_sleep_begin (core->cons);
 		r_core_rtr_rap_run (core, input);
-		r_cons_sleep_end (bed);
+		r_cons_sleep_end (core->cons, bed);
 		return;
 	}
 
@@ -1090,7 +1090,7 @@ R_API void r_core_rtr_cmd(RCore *core, const char *input) {
 		//ensure the termination
 		r_socket_close (s);
 		cmd_output[maxlen] = 0;
-		r_cons_println (cmd_output);
+		r_cons_println (core->cons, cmd_output);
 		free ((void *)cmd_output);
 		return;
 	}
@@ -1109,7 +1109,7 @@ R_API void r_core_rtr_cmd(RCore *core, const char *input) {
 		}
 		r_core_return_value (core, R_CMD_RC_SUCCESS);
 		str[len] = 0;
-		r_cons_print (str);
+		r_cons_print (core->cons, str);
 		free ((void *)str);
 		free ((void *)uri);
 		return;
@@ -1125,7 +1125,7 @@ R_API void r_core_rtr_cmd(RCore *core, const char *input) {
 			return;
 		}
 		char *cmd_output = r_socket_rap_client_command (fh, cmd, &core->anal->coreb);
-		r_cons_println (cmd_output);
+		r_cons_println (core->cons, cmd_output);
 		free (cmd_output);
 		return;
 	}
@@ -1235,9 +1235,9 @@ static void rtr_cmds_read(uv_stream_t *client, ssize_t nread, const uv_buf_t *bu
 	}
 	*end = '\0';
 
-	r_cons_sleep_end (context->bed);
+	r_cons_sleep_end (core->cons, context->bed);
 	client_context->res = r_core_cmd_str (client_context->core, (const char *)client_context->buf);
-	context->bed = r_cons_sleep_begin ();
+	context->bed = r_cons_sleep_begin (core->cons);
 
 	if (!client_context->res || !*client_context->res) {
 		free (client_context->res);
@@ -1316,14 +1316,11 @@ static void rtr_cmds_break(uv_async_t *async) {
 
 R_API int r_core_rtr_cmds(RCore *core, const char *port) {
 	if (!port || port[0] == '?') {
-		r_cons_printf ("Usage: .:[tcp-port]    run r2 commands for clients\n");
+		r_cons_printf (core->cons, "Usage: .:[tcp-port]    run r2 commands for clients\n");
 		return 0;
 	}
 
 	uv_loop_t *loop = R_NEW (uv_loop_t);
-	if (!loop) {
-		return 0;
-	}
 	uv_loop_init (loop);
 
 	rtr_cmds_context context;
@@ -1334,8 +1331,9 @@ R_API int r_core_rtr_cmds(RCore *core, const char *port) {
 	uv_tcp_init (loop, &context.server);
 
 	struct sockaddr_in addr;
-	bool local = (bool) r_config_get_i(core->config, "tcp.islocal");
 	int porti = r_socket_port_by_name (port);
+	const char *http_bind = r_config_get (core->config, "http.bind");
+	const bool local = R_STR_ISEMPTY (http_bind) || r_str_startswith (http_bind, "local");
 	uv_ip4_addr (local ? "127.0.0.1" : "0.0.0.0", porti, &addr);
 
 	uv_tcp_bind (&context.server, (const struct sockaddr *) &addr, 0);
@@ -1348,11 +1346,11 @@ R_API int r_core_rtr_cmds(RCore *core, const char *port) {
 	uv_async_t stop_async;
 	uv_async_init (loop, &stop_async, rtr_cmds_stop);
 
-	r_cons_break_push ((RConsBreak) rtr_cmds_break, &stop_async);
-	context.bed = r_cons_sleep_begin ();
+	r_cons_break_push (core->cons, (RConsBreak) rtr_cmds_break, &stop_async);
+	context.bed = r_cons_sleep_begin (core->cons);
 	uv_run (loop, UV_RUN_DEFAULT);
-	r_cons_sleep_end (context.bed);
-	r_cons_break_pop ();
+	r_cons_sleep_end (core->cons, context.bed);
+	r_cons_break_pop (core->cons);
 
 beach:
 	uv_loop_close (loop);
@@ -1370,12 +1368,14 @@ R_API int r_core_rtr_cmds(RCore *core, const char *port) {
 	char *str;
 
 	if (!port || port[0] == '?') {
-		r_cons_printf ("Usage: .:[tcp-port]    run r2 commands for clients\n");
+		r_cons_printf (core->cons, "Usage: .:[tcp-port]    run r2 commands for clients\n");
 		return false;
 	}
 
 	RSocket *s = r_socket_new (0);
-	s->local = r_config_get_i (core->config, "tcp.islocal");
+	const char *http_bind = r_config_get (core->config, "http.bind");
+	const bool local = R_STR_ISEMPTY (http_bind) || r_str_startswith (http_bind, "local");
+	s->local = local;
 
 	if (!r_socket_listen (s, port, NULL)) {
 		R_LOG_ERROR ("listening on port %s", port);
@@ -1385,16 +1385,16 @@ R_API int r_core_rtr_cmds(RCore *core, const char *port) {
 
 	R_LOG_INFO ("Listening for commands on port %s", port);
 	listenport = port;
-	r_cons_break_push ((RConsBreak)r_core_rtr_http_stop, core);
+	r_cons_break_push (core->cons, (RConsBreak)r_core_rtr_http_stop, core);
 	for (;;) {
-		if (r_cons_is_breaked ()) {
+		if (r_cons_is_breaked (core->cons)) {
 			break;
 		}
-		void *bed = r_cons_sleep_begin ();
+		void *bed = r_cons_sleep_begin (core->cons);
 		ch = r_socket_accept (s);
 		buf[0] = 0;
 		ret = r_socket_read (ch, buf, sizeof (buf) - 1);
-		r_cons_sleep_end (bed);
+		r_cons_sleep_end (core->cons, bed);
 		if (ret > 0) {
 			buf[ret] = 0;
 			for (i = 0; buf[i]; i++) {
@@ -1407,20 +1407,20 @@ R_API int r_core_rtr_cmds(RCore *core, const char *port) {
 				break;
 			}
 			str = r_core_cmd_str (core, (const char *)buf);
-			bed = r_cons_sleep_begin ();
+			bed = r_cons_sleep_begin (core->cons);
 			if (str && *str)  {
 				r_socket_write (ch, str, strlen (str));
 			} else {
 				r_socket_write (ch, "\n", 1);
 			}
-			r_cons_sleep_end (bed);
+			r_cons_sleep_end (core->cons, bed);
 			free (str);
 		}
 		r_socket_close (ch);
 		r_socket_free (ch);
 		ch = NULL;
 	}
-	r_cons_break_pop ();
+	r_cons_break_pop (core->cons);
 	r_socket_free (s);
 	r_socket_free (ch);
 	return 0;

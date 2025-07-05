@@ -3,10 +3,6 @@
 #ifndef R2_ANAL_H
 #define R2_ANAL_H
 
-/* use old refs and function storage */
-// still required by core in lot of places
-#define USE_VARSUBS 0
-
 #include <r_cons.h>
 #include <r_io.h>
 #include <r_esil.h>
@@ -304,9 +300,7 @@ typedef struct r_anal_function_t {
 	RAnalFcnMeta meta;
 	RList *imports; // maybe bound to class?
 	struct r_anal_t *anal; // this function is associated with this instance
-#if R2_600
 	ut64 ts; // timestamp when the function was registered. useful to sort them by order or "incremental projects"). afla
-#endif
 } RAnalFunction;
 
 typedef struct r_anal_func_arg_t {
@@ -971,7 +965,7 @@ R_API RList *r_anal_get_functions_in(RAnal *anal, ut64 addr);
 // returns the function that has its entrypoint at addr or NULL
 R_API RAnalFunction *r_anal_get_function_at(RAnal *anal, ut64 addr);
 
-R_API bool r_anal_function_delete(RAnalFunction *fcn);
+R_API bool r_anal_function_delete(RAnal *anal, RAnalFunction *fcn);
 
 // rhange the entrypoint of fcn
 // This can fail (and return false) if there is already another function at the new address
@@ -1102,7 +1096,6 @@ R_API int r_anal_function_complexity(RAnalFunction *fcn);
 R_API int r_anal_function_loops(RAnalFunction *fcn);
 R_API void r_anal_trim_jmprefs(RAnal *anal, RAnalFunction *fcn);
 R_API void r_anal_del_jmprefs(RAnal *anal, RAnalFunction *fcn);
-R_API char *r_anal_function_get_json(RAnalFunction *function);
 R_API RAnalFunction *r_anal_function_next(RAnal *anal, ut64 addr);
 R_API char *r_anal_function_get_signature(RAnalFunction *function);
 R_API bool r_anal_function_del_signature(RAnal *a, const char *name);
@@ -1170,11 +1163,11 @@ R_API st64 r_anal_function_get_var_stackptr_at(RAnalFunction *fcn, st64 delta, u
 R_API const char *r_anal_function_get_var_reg_at(RAnalFunction *fcn, st64 delta, ut64 addr);
 R_API R_BORROW RPVector *r_anal_function_get_vars_used_at(RAnalFunction *fcn, ut64 op_addr);
 
-R_API bool r_anal_var_rename(RAnalVar *var, const char *new_name, bool verbose);
-R_API void r_anal_var_set_type(RAnalVar *var, const char *type);
-R_API void r_anal_var_delete(RAnalVar *var);
+R_API bool r_anal_var_rename(RAnal *anal, RAnalVar *var, const char *new_name);
+R_API void r_anal_var_set_type(RAnal *anal, RAnalVar *var, const char *type);
+R_API bool r_anal_var_delete(RAnal *anal, RAnalVar *var);
 R_API ut64 r_anal_var_addr(RAnalVar *var);
-R_API void r_anal_var_set_access(RAnalVar *var, const char *reg, ut64 access_addr, int access_type, st64 stackptr);
+R_API bool r_anal_var_set_access(RAnal *anal, RAnalVar *var, const char *reg, ut64 access_addr, int access_type, st64 stackptr);
 R_API void r_anal_var_remove_access_at(RAnalVar *var, ut64 address);
 R_API void r_anal_var_clear_accesses(RAnalVar *var);
 R_API void r_anal_var_add_constraint(RAnalVar *var, R_BORROW RAnalVarConstraint *constraint);
@@ -1475,7 +1468,7 @@ R_API ut64 r_anal_vtable_info_get_size(RVTableContext *context, RVTableInfo *vta
 R_API bool r_anal_vtable_begin(RAnal *anal, RVTableContext *context);
 R_API RVTableInfo *r_anal_vtable_parse_at(RVTableContext *context, ut64 addr);
 R_API RList *r_anal_vtable_search(RVTableContext *context);
-R_API void r_anal_vtables_list(RAnal *anal, int rad);
+R_API char *r_anal_vtables_list(RAnal *anal, int rad);
 
 /* rtti */
 R_API char *r_anal_rtti_msvc_demangle_class_name(RVTableContext *context, const char *name);
@@ -1559,12 +1552,12 @@ R_API RVector/*<RAnalVTable>*/ *r_anal_class_vtable_get_all(RAnal *anal, const c
 R_API RAnalClassErr r_anal_class_vtable_set(RAnal *anal, const char *class_name, RAnalVTable *vtable);
 R_API RAnalClassErr r_anal_class_vtable_delete(RAnal *anal, const char *class_name, const char *vtable_id);
 
-R_API void r_anal_class_print(RAnal *anal, const char *class_name, bool detailed);
+R_API char *r_anal_class_print(RAnal *anal, const char *class_name, bool detailed);
 R_API void r_anal_class_json(RAnal *anal, PJ *j, const char *class_name);
-R_API void r_anal_class_list(RAnal *anal, int mode);
-R_API void r_anal_class_list_bases(RAnal *anal, const char *class_name);
-R_API void r_anal_class_list_vtables(RAnal *anal, const char *class_name);
-R_API void r_anal_class_list_vtable_offset_functions(RAnal *anal, const char *class_name, ut64 offset);
+R_API char *r_anal_class_list(RAnal *anal, int mode);
+R_API char *r_anal_class_list_bases(RAnal *anal, const char *class_name);
+R_API char *r_anal_class_list_vtables(RAnal *anal, const char *class_name);
+R_API char *r_anal_class_list_vtable_offset_functions(RAnal *anal, const char *class_name, ut64 offset);
 R_API RGraph/*<RGraphNodeInfo>*/ *r_anal_class_get_inheritance_graph(RAnal *anal);
 
 R_API RAnalEsilCFG *r_anal_esil_cfg_new(void);

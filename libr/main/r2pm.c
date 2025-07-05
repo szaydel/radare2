@@ -60,7 +60,6 @@ typedef struct r_r2pm_t {
 	bool uninstall;
 	bool upgrade;
 	bool version;
-
 	int rc;
 	const char *time;
 } R2Pm;
@@ -362,6 +361,25 @@ static int r2pm_update(bool force) {
 	return rc;
 }
 
+// set python virtual environment when available
+static void r2pm_set_pyvenv(R2Pm *r2pm) {
+	char *r2_prefix = r_xdg_datadir ("prefix");
+	if (!r2_prefix) {
+		R_LOG_ERROR ("Cannot resolve xdg.datadir('prefix')");
+		return;
+	}
+	// set PYTHOMHOME, VIRTUAL_ENV and PATH
+	char *venv = r_file_new (r2_prefix, "venv", NULL);
+	if (r_file_is_directory (venv)) {
+		r_sys_setenv ("VIRTUAL_ENV", venv);
+		char *venv_bin = r_file_new (venv, "bin", NULL);
+		r_sys_setenv_sep ("PATH", venv_bin, false);
+		free (venv_bin);
+	}
+	free (r2_prefix);
+	free (venv);
+}
+
 static void r2pm_setenv(R2Pm *r2pm) {
 	char *gmake = r_file_path ("gmake");
 	if (gmake) {
@@ -370,6 +388,7 @@ static void r2pm_setenv(R2Pm *r2pm) {
 		r_sys_setenv ("MAKE", "make");
 	}
 	free (gmake);
+	r2pm_set_pyvenv (r2pm);
 
 	if (r2pm->global) {
 		// the r2pm_plugdir changes when using -g
@@ -728,7 +747,8 @@ static int r2pm_install_pkg(const char *pkg, bool clean, bool global) {
 		free (needs);
 		if (error) {
 			if (r2pm_check ("apt") && r_file_is_directory ("/system/bin")) {
-				if (r_cons_yesno ('y', "Install system dependencies (Y/n)")) {
+				RCons *cons = r_cons_singleton ();
+				if (r_cons_yesno (cons, 'y', "Install system dependencies (Y/n)")) {
 					const char cmd[] = "apt install build-essential ninja git make patch python wget binutils";
 					R_LOG_INFO ("Running %s", cmd);
 					if (r_sys_cmd (cmd) == 0) {
@@ -1154,9 +1174,10 @@ static void r2pm_varprint(const char *name) {
 
 R_API int r_main_r2pm(int argc, const char **argv) {
 	bool havetoflush = false;
-	if (!r_cons_is_initialized ()) {
+	RCons *cons = r_cons_global (NULL);
+	if (!cons) {
 		havetoflush = true;
-		r_cons_new ();
+		cons = r_cons_new2 ();
 	}
 #if R2__UNIX__
 	char *wd = getcwd (NULL, 0);
@@ -1365,9 +1386,9 @@ R_API int r_main_r2pm(int argc, const char **argv) {
 	if (r2pm.search) {
 		char *s = r2pm_search (argv[opt.ind], r2pm.json? 'j': 0);
 		if (s) {
-			r_cons_print (s);
+			r_cons_print (cons, s);
 			if (havetoflush) {
-				r_cons_flush ();
+				r_cons_flush (cons);
 			}
 			res = 0;
 			free (s);
@@ -1389,9 +1410,9 @@ R_API int r_main_r2pm(int argc, const char **argv) {
 	} else if (r2pm.list) {
 		char *s = r2pm_list (r2pm.json? 'j': 0);
 		if (s) {
-			r_cons_print (s);
+			r_cons_print (cons, s);
 			if (havetoflush) {
-				r_cons_flush ();
+				r_cons_flush (cons);
 			}
 			res = 0;
 		} else {
@@ -1405,13 +1426,13 @@ R_API int r_main_r2pm(int argc, const char **argv) {
 			char *s = r2pm_get (pkg, "\nR2PM_RELOAD() {", TT_CODEBLOCK);
 			if (s) {
 				char *t = r_str_trim_lines (s);
-				r_cons_print (t);
+				r_cons_print (cons, t);
 				free (t);
 				free (s);
 			}
 		}
 		if (havetoflush) {
-			r_cons_flush ();
+			r_cons_flush (cons);
 		}
 	}
 	r_list_free (targets);

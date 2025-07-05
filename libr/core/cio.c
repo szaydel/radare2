@@ -90,9 +90,9 @@ R_API bool r_core_dump(RCore *core, const char *file, ut64 addr, ut64 size, int 
 		fclose (fd);
 		return false;
 	}
-	r_cons_break_push (NULL, NULL);
+	r_cons_break_push (core->cons, NULL, NULL);
 	for (i = 0; i < size; i += bs) {
-		if (r_cons_is_breaked ()) {
+		if (r_cons_is_breaked (core->cons)) {
 			break;
 		}
 		if ((i + bs) > size) {
@@ -104,7 +104,7 @@ R_API bool r_core_dump(RCore *core, const char *file, ut64 addr, ut64 size, int 
 			break;
 		}
 	}
-	r_cons_break_pop ();
+	r_cons_break_pop (core->cons);
 	fclose (fd);
 	free (buf);
 	return true;
@@ -394,7 +394,7 @@ R_API void r_core_seek_arch_bits(RCore *core, ut64 addr) {
 		}
 	}
 	if (arch) {
-		if (core->anal->config->arch && strcmp (arch, core->anal->config->arch)) {
+		if (strcmp (arch, core->anal->config->arch)) {
 			r_config_set (core->config, "asm.arch", arch);
 		}
 	}

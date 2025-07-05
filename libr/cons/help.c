@@ -35,7 +35,7 @@ R_API void r_cons_cmd_help_json(RCons *cons, RCoreHelpMessage help) {
 			pj_ka (pj, "commands");
 		} else if (!help_args[0] && !help_desc[0]) {
 			/* Section header, no need to indent it */
-		//	r_cons_printf ("%s%s%s\n", pal_help_color, help_cmd, pal_reset);
+		//	r_cons_printf (cons, "%s%s%s\n", pal_help_color, help_cmd, pal_reset);
 		} else {
 			/* Body of help text, indented */
 			pj_o (pj);
@@ -49,15 +49,75 @@ R_API void r_cons_cmd_help_json(RCons *cons, RCoreHelpMessage help) {
 	pj_end (pj);
 	char *s = pj_drain (pj);
 	if (s) {
-		r_cons_printf ("%s\n", s);
+		r_cons_printf (cons, "%s\n", s);
 		free (s);
 	}
 }
 
 /* Print a coloured help message */
-R_API void r_cons_cmd_help(RCoreHelpMessage help, bool use_color) {
-	RCons *cons = r_cons_singleton ();
-	r_kons_cmd_help (cons, help, use_color);
+R_API void r_cons_cmd_help(RCons *cons, RCoreHelpMessage help, bool use_color) {
+	const char *pal_input_color = use_color ? cons->context->pal.input : "";
+	const char *pal_args_color = use_color ? cons->context->pal.args : "";
+	const char *pal_help_color = use_color ? cons->context->pal.help : "";
+	const char *pal_reset = use_color ? cons->context->pal.reset : "";
+	int i, max_length = 0, padding = 0;
+	const char *usage_str = "Usage:";
+	const char *help_cmd = NULL, *help_args = NULL, *help_desc = NULL;
+	if (!pal_input_color) {
+		pal_input_color = "";
+	}
+	if (!pal_args_color) {
+		pal_args_color = "";
+	}
+	if (!pal_help_color) {
+		pal_help_color = "";
+	}
+	if (!pal_reset) {
+		pal_reset = Color_RESET;
+	}
+
+	// calculate padding for description text in advance
+	for (i = 0; help[i]; i += 3) {
+		help_cmd = help[i + 0];
+		help_args = help[i + 1];
+
+		int len_cmd = strlen (help_cmd);
+		int len_args = strlen (help_args);
+		if (i) {
+			max_length = R_MAX (max_length, len_cmd + len_args);
+		}
+	}
+
+	for (i = 0; help[i]; i += 3) {
+		help_cmd  = help[i + 0];
+		help_args = help[i + 1];
+		help_desc = help[i + 2];
+
+		if (r_str_startswith (help_cmd, usage_str)) {
+			/* Usage header */
+			const char *afterusage = help_cmd + strlen (usage_str);
+			r_cons_printf (cons, "Usage:%s%s", pal_args_color, afterusage);
+			if (help_args[0]) {
+				r_cons_printf (cons, " %s", help_args);
+			}
+			if (help_desc[0]) {
+				r_cons_printf (cons, "  %s", help_desc);
+			}
+			r_cons_printf (cons, "%s\n", pal_reset);
+		} else if (!help_args[0] && !help_desc[0]) {
+			/* Section header, no need to indent it */
+			r_cons_printf (cons, "%s%s%s\n", pal_help_color, help_cmd, pal_reset);
+		} else {
+			/* Body of help text, indented */
+			int str_length = strlen (help_cmd) + strlen (help_args);
+			padding = R_MAX ((max_length - str_length), 0);
+			r_cons_printf (cons, "| %s%s%s%s%*s  %s%s%s\n",
+				pal_input_color, help_cmd,
+				pal_args_color, help_args,
+				padding, "",
+				pal_help_color, help_desc, pal_reset);
+		}
+	}
 }
 
 /* See r_cons_cmd_help().
@@ -67,7 +127,7 @@ R_API void r_cons_cmd_help(RCoreHelpMessage help, bool use_color) {
  * If exact is false, will match any command that contains the search text.
  * For example, ("pd", 'r', false) matches both `pdr` and `pdr.`.
  */
-R_API void r_cons_cmd_help_match(RCoreHelpMessage help, bool use_color, R_BORROW char * R_NONNULL cmd, char spec, bool exact) {
+R_API void r_cons_cmd_help_match(RCons *cons, RCoreHelpMessage help, bool use_color, R_BORROW char * R_NONNULL cmd, char spec, bool exact) {
 	RVector/*<int>*/ *match_indices = r_vector_new (sizeof (int), NULL, NULL);
 	char **matches = NULL;
 	size_t num_matches;
@@ -103,7 +163,7 @@ R_API void r_cons_cmd_help_match(RCoreHelpMessage help, bool use_color, R_BORROW
 		}
 	}
 	matches[matches_copied] = NULL;
-	r_cons_cmd_help ((const char * const *)matches, use_color);
+	r_cons_cmd_help (cons, (const char * const *)matches, use_color);
 
 out:
 	free (matches);

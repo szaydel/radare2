@@ -1,8 +1,9 @@
-/* radare - LGPL - Copyright 2010-2024 - nibble, alvaro, pancake */
+/* radare - LGPL - Copyright 2010-2025 - nibble, alvaro, pancake */
 
 #define R_LOG_ORIGIN "fcn"
 
 #include <r_anal.h>
+#include <r_core.h>
 #include <r_vec.h>
 
 #define READ_AHEAD 1
@@ -458,6 +459,7 @@ typedef struct {
 static bool fcn_takeover_block_recursive_followthrough_cb(RAnalBlock *block, void *user) {
 	BlockTakeoverCtx *ctx = user;
 	RAnalFunction *our_fcn = ctx->fcn;
+	RAnal *anal = our_fcn->anal;
 	r_anal_block_ref (block);
 	while (!r_list_empty (block->fcns)) {
 		RAnalFunction *other_fcn = r_list_first (block->fcns);
@@ -487,7 +489,7 @@ static bool fcn_takeover_block_recursive_followthrough_cb(RAnalBlock *block, voi
 				}
 				if (our_var) {
 					RAnalVarAccess *acc = r_anal_var_get_access_at (other_var, addr);
-					r_anal_var_set_access (our_var, acc->reg, addr, acc->type, acc->stackptr);
+					r_anal_var_set_access (anal, our_var, acc->reg, addr, acc->type, acc->stackptr);
 				}
 				r_anal_var_remove_access_at (other_var, addr);
 				if (r_vector_empty (&other_var->accesses)) {
@@ -621,19 +623,21 @@ static int fcn_recurse(RAnal *anal, RAnalFunction *fcn, ut64 addr, ut64 len, int
 	} delay = {
 		0
 	};
+	RCore *core = anal->coreb.core;
+	RCons *cons = core->cons;
 	const char *arch = anal->config? anal->config->arch: R_SYS_ARCH;
 	bool arch_destroys_dst = does_arch_destroys_dst (arch);
 	const bool flagends = anal->opt.flagends;
 	const bool is_arm = r_str_startswith (arch, "arm");
 	const bool is_mips = !is_arm && r_str_startswith (arch, "mips");
-	const bool is_v850 = is_arm ? false: (arch && (!strncmp (arch, "v850", 4) || !strncmp (anal->coreb.cfgGet (anal->coreb.core, "asm.cpu"), "v850", 4)));
+	const bool is_v850 = is_arm ? false: (arch && (!strncmp (arch, "v850", 4) || !strncmp (anal->coreb.cfgGet (core, "asm.cpu"), "v850", 4)));
 	const bool is_x86 = is_arm ? false: arch && !strncmp (arch, "x86", 3);
 	const bool is_amd64 = is_x86 ? fcn->callconv && !strcmp (fcn->callconv, "amd64") : false;
 	const bool is_dalvik = is_x86 ? false : arch && !strncmp (arch, "dalvik", 6);
 	const bool propagate_noreturn = anal->opt.propagate_noreturn;
 	ut64 v1 = UT64_MAX;
 
-	if (r_cons_is_breaked ()) {
+	if (r_cons_is_breaked (cons)) {
 		return R_ANAL_RET_END;
 	}
 	if (anal->sleep) {
@@ -754,7 +758,7 @@ static int fcn_recurse(RAnal *anal, RAnalFunction *fcn, ut64 addr, ut64 len, int
 			break;
 		}
 repeat:
-		if (r_cons_is_breaked ()) {
+		if (r_cons_is_breaked (cons)) {
 			break;
 		}
 		ut8 buf[32]; // 32 bytes is enough to hold any instruction.
@@ -1217,7 +1221,7 @@ noskip:
 					}
 				}
 			}
-			if (r_cons_is_breaked ()) {
+			if (r_cons_is_breaked (cons)) {
 				gotoBeach (R_ANAL_RET_END);
 			}
 			if (anal->opt.jmpref) {
@@ -1877,7 +1881,7 @@ R_API int r_anal_function(RAnal *anal, RAnalFunction *fcn, ut64 addr, int reftyp
 R_API int r_anal_function_del(RAnal *a, ut64 addr) {
 	RAnalFunction *fcn = r_anal_get_function_at (a, addr);
 	if (fcn) {
-		r_anal_function_delete (fcn);
+		r_anal_function_delete (a, fcn);
 		// r_anal_function_free (fcn);
 		return true;
 	}
@@ -2045,76 +2049,6 @@ R_API int r_anal_function_complexity(RAnalFunction *fcn) {
 	}
 	// R_RETURN_VAL_IF_FAIL (result > 0, 0);
 	return result;
-}
-
-// TODO: R2_600 - take PJ*pj instance as argument and return void or null instead
-// tfj and afsj call this function
-R_API char *r_anal_function_get_json(RAnalFunction *fcn) {
-	R_RETURN_VAL_IF_FAIL (fcn, 0);
-	RAnal *a = fcn->anal;
-	PJ *pj = a->coreb.pjWithEncoding (a->coreb.core);
-	const char *realname = NULL, *import_substring = NULL;
-
-	RFlagItem *flag = a->flag_get (a->flb.f, false, fcn->addr);
-	// Can't access R_FLAGS_FS_IMPORTS, since it is defined in r_core.h
-	if (flag && flag->space && !strcmp (flag->space->name, "imports")) {
-		// Get substring after last dot
-		import_substring = r_str_rchr (fcn->name, NULL, '.');
-		if (import_substring) {
-			realname = import_substring + 1;
-		}
-	} else {
-		realname = fcn->name;
-	}
-
-	char *args = strdup ("");
-	char *sdb_ret = r_str_newf ("func.%s.ret", realname);
-	char *sdb_args = r_str_newf ("func.%s.args", realname);
-	// RList *args_list = r_list_newf ((RListFree) free);
-	unsigned int i;
-	const char *ret_type = sdb_const_get (a->sdb_types, sdb_ret, 0);
-	const char *argc_str = sdb_const_get (a->sdb_types, sdb_args, 0);
-
-	int argc = argc_str? atoi (argc_str): 0;
-
-	pj_o (pj);
-	pj_ks (pj, "name", fcn->name);
-	const bool no_return = r_anal_noreturn_at_addr (a, fcn->addr);
-	pj_kb (pj, "noreturn", no_return);
-	pj_ks (pj, "ret", r_str_get_fail (ret_type, "void"));
-	if (fcn->callconv) {
-		pj_ks (pj, "callconv", fcn->callconv);
-	}
-	pj_kn (pj, "argc", argc);
-	pj_k (pj, "args");
-	pj_a (pj);
-	for (i = 0; i < argc; i++) {
-		char *sdb_arg_i = r_str_newf ("func.%s.arg.%d", realname, i);
-		char *arg_i = sdb_get (a->sdb_types, sdb_arg_i, 0);
-		if (!arg_i) {
-			continue;
-		}
-		pj_o (pj);
-		char *comma = strchr (arg_i, ',');
-		if (comma) {
-			*comma = 0;
-			pj_ks (pj, "name", comma + 1);
-			pj_ks (pj, "type", arg_i);
-			const char *rn = r_reg_alias_getname (a->reg, R_REG_ALIAS_A0 + i);
-			if (rn) {
-				pj_ks (pj, "cc", rn);
-			}
-		}
-		free (arg_i);
-		free (sdb_arg_i);
-		pj_end (pj);
-	}
-	pj_end (pj);
-	free (sdb_args);
-	free (sdb_ret);
-	free (args);
-	pj_end (pj);
-	return pj_drain (pj);
 }
 
 R_API bool r_anal_function_del_signature(RAnal *a, const char *name) {
@@ -2528,7 +2462,8 @@ static void update_var_analysis(RAnalFunction *fcn, int align, ut64 from, ut64 t
 	}
 	for (cur_addr = from; cur_addr < to; cur_addr += opsz, len -= opsz) {
 		RAnalOp op;
-		int ret = r_anal_op (anal->coreb.core, &op, cur_addr, buf, len, R_ARCH_OP_MASK_ESIL | R_ARCH_OP_MASK_VAL);
+		// int ret = r_anal_op (anal->coreb.core, &op, cur_addr, buf, len, R_ARCH_OP_MASK_ESIL | R_ARCH_OP_MASK_VAL);
+		int ret = r_anal_op (anal, &op, cur_addr, buf, len, R_ARCH_OP_MASK_ESIL | R_ARCH_OP_MASK_VAL);
 		if (ret < 1 || op.size < 1) {
 			r_anal_op_fini (&op);
 			break;

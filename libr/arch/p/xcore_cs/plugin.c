@@ -1,4 +1,4 @@
-/* radare2 - LGPL - Copyright 2014-2024 - pancake */
+/* radare2 - LGPL - Copyright 2014-2025 - pancake */
 
 #include <r_arch.h>
 #include <capstone/capstone.h>
@@ -64,7 +64,7 @@ static csh cs_handle_for_session(RArchSession *as) {
 	return pd->cs_handle;
 }
 
-static bool decode(RArchSession *as, RAnalOp *op, RAnalOpMask mask) {
+static bool decode(RArchSession *as, RAnalOp *op, RArchDecodeMask mask) {
 	const ut64 addr = op->addr;
 	const ut8 *buf = op->bytes;
 	const int len = op->size;
@@ -166,7 +166,7 @@ static bool fini(RArchSession *as) {
 const RArchPlugin r_arch_plugin_xcore_cs = {
 	.meta = {
 		.name = "xcore",
-		.desc = "Capstone XCORE",
+		.desc = "XMOS multicore microcontroller xCORE (capstone)",
 		.license = "Apache-2.0",
 	},
 	.arch = "xcore",

@@ -13,9 +13,8 @@ static char *_get_body(void *data, void *user) {
 	return r_core_cmd_strf (core, "pD 0x%"PFMT64x" @ 0x%"PFMT64x, bb->size, bb->addr);
 }
 
-// int vs bool
-static int r_cmd_agD_call(void *user, const char *input) {
-	RCore *core = (RCore *)user;
+static bool r_cmd_agD_call(RCorePluginSession *cps, const char *input) {
+	RCore *core = cps->core;
 	if (!core) {
 		return false;
 	}
@@ -41,16 +40,16 @@ static int r_cmd_agD_call(void *user, const char *input) {
 	r_config_set_b (core->config, "asm.addr", false);
 	r_config_set_b (core->config, "asm.bytes", false);
 	RAGraphTransitionCBs agtcbs = {&_get_title, &_get_body};
-	RAGraph *dtagraph = r_agraph_new_from_graph (fcn_dtgraph, &agtcbs, core);
+	RAGraph *dtagraph = r_agraph_new_from_graph (core, fcn_dtgraph, &agtcbs, core);
 	r_config_set_b (core->config, "asm.lines", o_asm_lines);
 	r_config_set_b (core->config, "asm.addr", o_asm_address);
 	r_config_set_b (core->config, "asm.bytes", o_asm_bytes);
 	dtagraph->can->color = r_config_get_b (core->config, "scr.color");
-	r_agraph_print (dtagraph);
+	r_agraph_print (dtagraph, core);
 	r_agraph_free (dtagraph);
 	r_graph_free (fcn_dtgraph);
 	r_graph_free (fcn_graph);
-	r_cons_flush ();
+	r_cons_flush (core->cons);
 	return true;
 }
 

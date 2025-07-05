@@ -93,7 +93,7 @@ R_API void r_core_project_cat(RCore *core, const char *name) {
 	if (path) {
 		char *data = r_file_slurp (path, NULL);
 		if (data) {
-			r_cons_println (data);
+			r_cons_println (core->cons, data);
 			free (data);
 			r_core_return_value (core, R_CMD_RC_SUCCESS);
 		}
@@ -124,13 +124,13 @@ R_API int r_core_project_list(RCore *core, int mode) {
 			}
 		}
 		pj_end (pj);
-		r_cons_printf ("%s\n", pj_string (pj));
+		r_cons_println (core->cons, pj_string (pj));
 		pj_free (pj);
 		break;
 	default:
 		r_list_foreach (list, iter, foo) {
 			if (r_core_is_project (core, foo)) {
-				r_cons_println (foo);
+				r_cons_println (core->cons, foo);
 			}
 		}
 		break;
@@ -141,6 +141,7 @@ R_API int r_core_project_list(RCore *core, int mode) {
 }
 
 R_API int r_core_project_delete(RCore *core, const char *prjfile) {
+	RCons *cons = core->cons;
 	if (r_sandbox_enable (0)) {
 		R_LOG_ERROR ("Cannot delete project in sandbox mode");
 		return 0;
@@ -160,7 +161,7 @@ R_API int r_core_project_delete(RCore *core, const char *prjfile) {
 		bool must_rm = true;
 		if (r_config_get_b (core->config, "scr.interactive")) {
 			R_LOG_INFO ("Removing: %s", prj_dir);
-			must_rm = r_cons_yesno ('y', "Confirm project deletion? (Y/n)");
+			must_rm = r_cons_yesno (cons, 'y', "Confirm project deletion? (Y/n)");
 		}
 		if (must_rm) {
 			r_file_rm_rf (prj_dir);
@@ -306,7 +307,7 @@ static bool r_core_project_load(RCore *core, const char *prj_name, const char *r
 		return false;
 	}
 	const bool cfg_fortunes = r_config_get_b (core->config, "cfg.fortunes");
-	const bool scr_interactive = r_cons_is_interactive ();
+	const bool scr_interactive = r_cons_is_interactive (core->cons);
 	const bool scr_prompt = r_config_get_b (core->config, "scr.prompt");
 	(void) load_project_rop (core, prj_name);
 	const bool sandy = r_config_get_b (core->config, "prj.sandbox");
@@ -334,7 +335,7 @@ static bool r_core_project_load(RCore *core, const char *prj_name, const char *r
 	if (r_config_get_b (core->config, "prj.history")) {
 		char *file = r_file_new (prj_path, "history", NULL);
 		r_line_hist_free (core->cons->line); // R2_600 - hist_reset ?
-		r_line_hist_load (file);
+		r_line_hist_load (core->cons->line, file);
 		free (file);
 	}
 	free (prj_path);
@@ -372,6 +373,7 @@ R_API RThread *r_core_project_load_bg(RCore *core, const char *prj_name, const c
 }
 
 R_API bool r_core_project_open(RCore *core, const char *prj_path) {
+	RCons *cons = core->cons;
 	R_RETURN_VAL_IF_FAIL (core && !R_STR_ISEMPTY (prj_path), false);
 	bool interactive = r_config_get_b (core->config, "scr.interactive");
 	bool close_current_session = true;
@@ -379,7 +381,7 @@ R_API bool r_core_project_open(RCore *core, const char *prj_path) {
 	if (r_project_is_loaded (core->prj)) {
 		R_LOG_ERROR ("There's a project already opened");
 		ask_for_closing = false;
-		bool ccs = interactive? r_cons_yesno ('y', "Close current session? (Y/n)"): true;
+		bool ccs = interactive? r_cons_yesno (cons, 'y', "Close current session? (Y/n)"): true;
 		if (!ccs) {
 			R_LOG_ERROR ("Project not loaded");
 			return false;
@@ -394,9 +396,9 @@ R_API bool r_core_project_open(RCore *core, const char *prj_path) {
 		return false;
 	}
 	if (ask_for_closing && r_project_is_loaded (core->prj)) {
-		if (r_cons_is_interactive ()) {
+		if (r_cons_is_interactive (core->cons)) {
 			close_current_session = interactive
-				? r_cons_yesno ('y', "Close current session? (Y/n)")
+				? r_cons_yesno (cons, 'y', "Close current session? (Y/n)")
 				: true;
 		}
 	}
@@ -489,13 +491,15 @@ static bool store_files_and_maps(RCore *core, RIODesc *desc, ut32 id) {
 	RIOMap *map;
 	if (desc) {
 		// reload bin info
-		r_cons_printf ("'obf %s\n", desc->uri);
-		r_cons_printf ("'of \\\"%s\\\" %s\n", desc->uri, r_str_rwx_i (desc->perm));
+		RCons *cons = core->cons;
+		r_cons_printf (cons, "'obf %s\n", desc->uri);
+		r_cons_printf (cons, "'of \\\"%s\\\" %s\n", desc->uri, r_str_rwx_i (desc->perm));
 		if ((maps = r_io_map_get_by_fd (core->io, id))) { //wtf
 			r_list_foreach (maps, iter, map) {
-				r_cons_printf ("om %d 0x%" PFMT64x " 0x%" PFMT64x " 0x%" PFMT64x " %s%s%s\n", fdc,
-						r_io_map_begin (map), r_io_map_size (map), map->delta, r_str_rwx_i (map->perm),
-						map->name? " " : "", r_str_get (map->name));
+				r_cons_printf (cons,
+					"om %d 0x%" PFMT64x " 0x%" PFMT64x " 0x%" PFMT64x " %s%s%s\n", fdc,
+					r_io_map_begin (map), r_io_map_size (map), map->delta, r_str_rwx_i (map->perm),
+					map->name? " " : "", r_str_get (map->name));
 			}
 			r_list_free (maps);
 		}
@@ -505,8 +509,8 @@ static bool store_files_and_maps(RCore *core, RIODesc *desc, ut32 id) {
 }
 #endif
 
-static void flush(RStrBuf *sb) {
-	char * s = r_cons_drain ();
+static void flush(RCore *core, RStrBuf *sb) {
+	char * s = r_cons_drain (core->cons);
 	if (s) {
 		r_strbuf_append (sb, s);
 		free (s);
@@ -522,101 +526,107 @@ R_API bool r_core_project_save_script(RCore *core, const char *file, int opts) {
 
 	char *filename = r_str_word_get_first (file);
 
-	hl = r_cons_singleton ()->highlight;
+	hl = core->cons->highlight;
 	if (hl) {
 		ohl = strdup (hl);
-		r_cons_highlight (NULL);
+		r_cons_highlight (core->cons, NULL);
 	}
 	RStrBuf *sb = r_strbuf_new ("");
-	r_cons_singleton ()->context->is_interactive = false;
-	r_cons_printf ("# r2 rdb project file\n");
+	core->cons->context->is_interactive = false;
+	RCons *cons = core->cons;
+	r_cons_printf (cons, "# r2 rdb project file\n");
 	// new behaviour to project load routine (see io maps below).
 	if (opts & R_CORE_PRJ_EVAL) {
-		r_cons_printf ("# eval\n");
-		r_config_list (core->config, NULL, 'r');
-		flush (sb);
+		r_cons_printf (core->cons, "# eval\n");
+		char *res = r_config_list (core->config, NULL, 'r');
+		r_cons_println (core->cons, res);
+		free (res);
+		flush (core, sb);
 	}
 	r_core_cmd (core, "o*", 0);
 	r_core_cmd (core, "om*", 0);
+	r_cons_printf (cons, "o=%d\n", core->io->desc->fd);
 	r_core_cmd0 (core, "tcc*");
 	if (opts & R_CORE_PRJ_FCNS) {
-		r_cons_printf ("# functions\n");
-		r_cons_printf ("fs functions\n");
+		r_cons_printf (cons, "# functions\n");
+		r_cons_printf (cons, "fs functions\n");
 		r_core_cmd (core, "afl*", 0);
-		flush (sb);
+		flush (core, sb);
 	}
 	{
-		r_cons_printf ("# registers\n");
+		r_cons_printf (cons, "# registers\n");
 		r_core_cmd (core, "ar*", 0);
-		flush (sb);
+		flush (core, sb);
 		r_core_cmd (core, "arR", 0);
-		flush (sb);
+		flush (core, sb);
 	}
 	if (opts & R_CORE_PRJ_FLAGS) {
-		r_cons_printf ("# flags\n");
+		r_cons_printf (cons, "# flags\n");
 		r_flag_space_push (core->flags, NULL);
-		r_flag_list (core->flags, true, NULL);
+		char *s = r_flag_list (core->flags, true, NULL);
+		r_cons_printf (cons, "%s", s);
+		free (s);
 		r_flag_space_pop (core->flags);
-		flush (sb);
+		flush (core, sb);
 	}
 #if PROJECT_EXPERIMENTAL
 	if (opts & R_CORE_PRJ_IO_MAPS && core->io) {
 		fdc = 3;
 		r_id_storage_foreach (&core->io->files, (RIDStorageForeachCb)store_files_and_maps, core);
-		flush (sb);
+		flush (core, sb);
 	}
 #endif
 	{
 		r_core_cmd (core, "fz*", 0);
-		flush (sb);
+		flush (core, sb);
 	}
 	if (opts & R_CORE_PRJ_META) {
-		r_cons_printf ("# meta\n");
+		r_cons_printf (cons, "# meta\n");
 		r_meta_print_list_all (core->anal, R_META_TYPE_ANY, 1, NULL, NULL);
-		flush (sb);
+		flush (core, sb);
 		r_core_cmd (core, "fV*", 0);
-		flush (sb);
+		flush (core, sb);
 		r_core_cmd (core, "ano*@@@F", 0);
-		flush (sb);
+		flush (core, sb);
 	}
 	if (opts & R_CORE_PRJ_XREFS) {
 		r_core_cmd (core, "ax*", 0);
-		flush (sb);
+		flush (core, sb);
 	}
 	if (opts & R_CORE_PRJ_FLAGS) {
 		r_core_cmd (core, "f.**", 0);
-		flush (sb);
+		flush (core, sb);
 	}
 	if (opts & R_CORE_PRJ_DBG_BREAK) {
 		r_core_cmd (core, "db*", 0);
-		flush (sb);
+		flush (core, sb);
 	}
 	if (opts & R_CORE_PRJ_ANAL_HINTS) {
 		r_core_cmd (core, "ah*", 0);
-		flush (sb);
+		flush (core, sb);
 	}
 	if (opts & R_CORE_PRJ_ANAL_TYPES) {
-		r_cons_printf ("# types\n");
+		r_cons_println (cons, "# types");
 		r_core_cmd (core, "t*", 0);
-		flush (sb);
+		flush (core, sb);
 	}
 	if (opts & R_CORE_PRJ_ANAL_MACROS) {
-		r_cons_printf ("# macros\n");
+		r_cons_println (cons, "# macros");
 		r_core_cmd (core, "(*", 0);
-		r_cons_printf ("# aliases\n");
+		r_cons_println (cons, "# aliases");
 		r_core_cmd (core, "$*", 0);
-		flush (sb);
+		flush (core, sb);
 	}
 	r_core_cmd (core, "wc*", 0);
 	if (opts & R_CORE_PRJ_ANAL_SEEK) {
-		r_cons_printf ("# seek\n" "s 0x%08" PFMT64x "\n", core->addr);
-		flush (sb);
+		r_cons_printf (cons, "# seek\n" "s 0x%08" PFMT64x "\n", core->addr);
+		flush (core, sb);
 	}
-	r_cons_singleton ()->context->is_interactive = true;
-	flush (sb);
+	core->cons->context->is_interactive = true;
+	flush (core, sb);
 	char *s = r_strbuf_drain (sb);
 	if (!strcmp (filename, "/dev/stdout")) {
-		r_cons_printf ("%s\n", s);
+		r_cons_printf (cons, "%s\n", s);
 	} else {
 		if (!r_file_dump (filename, (const ut8*)s, strlen (s), 0)) {
 			R_LOG_ERROR ("Cannot save file");
@@ -625,7 +635,7 @@ R_API bool r_core_project_save_script(RCore *core, const char *file, int opts) {
 	free (s);
 
 	if (ohl) {
-		r_cons_highlight (ohl);
+		r_cons_highlight (cons, ohl);
 		free (ohl);
 	}
 	free (filename);

@@ -163,6 +163,8 @@ R_API bool r_str_is_false(const char *s);
 R_API bool r_str_is_bool(const char *val);
 R_API const char *r_str_ansi_chrn(const char *str, size_t n);
 R_API size_t r_str_ansi_strip(char *str);
+R_API char *r_str_html_strip(const char *ptr, int *newlen);
+R_API bool r_str_html_rgbparse(const char *p, ut8 *r, ut8 *g, ut8 *b, ut8 *a);
 R_API size_t r_str_ansi_len(const char *str);
 R_API size_t r_str_ansi_nlen(const char *str, size_t len);
 R_API int r_str_ansi_trim(char *str, int str_len, int n);
@@ -337,6 +339,10 @@ R_API void r_string_trim(RString *s);
 R_API R_WIP RString r_string_newf(const char *fmt, ...);
 R_API bool r_string_append(RString *a, const char * R_NONNULL s);
 R_API void r_string_appendf(RString *a, const char * R_NONNULL fmt, ...);
+
+R_API char *r_str_pseudo_transform(const char **rules, const char *asm_str);
+R_API char *r_str_pseudo_subvar(char *pseudo, void *varmap);
+
 
 #ifdef __cplusplus
 }

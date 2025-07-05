@@ -1,4 +1,4 @@
-/* radare - LGPL - Copyright 2019-2024 - GustavoLCR */
+/* radare - LGPL - Copyright 2019-2025 - GustavoLCR */
 
 #undef R_LOG_ORIGIN
 #define R_LOG_ORIGIN "windows.heap"
@@ -1228,12 +1228,11 @@ static void w32_list_heaps(RCore *core, const char format) {
 	}
 	if (format == 'j') {
 		pj_end (pj);
-		char *s = pj_string (pj);
-		r_cons_println (s);
-		free (s);
+		const char *s = pj_string (pj);
+		r_cons_println (core->cons, s);
 	} else {
 		char *s = r_table_tostring (tbl);
-		r_cons_println (s);
+		r_cons_println (core->cons, s);
 		free (s);
 	}
 	r_table_free (tbl);
@@ -1265,7 +1264,7 @@ static void w32_list_heaps_blocks(RCore *core, const char format) {
 		switch (format) {
 		case 'f':
 			if (heapInfo->heaps[i].BlockCount > 50000) {
-				go = r_cons_yesno ('n', "Are you sure you want to add %lu flags? (y/N)", heapInfo->heaps[i].BlockCount);
+				go = r_cons_yesno (core->cons, 'n', "Are you sure you want to add %lu flags? (y/N)", heapInfo->heaps[i].BlockCount);
 			}
 			break;
 		case 'j':
@@ -1320,10 +1319,10 @@ static void w32_list_heaps_blocks(RCore *core, const char format) {
 	}
 	if (format == 'j') {
 		pj_end (pj);
-		r_cons_println (pj_string (pj));
+		r_cons_println (core->cons, pj_string (pj));
 	} else if (format != 'f') {
 		char *s = r_table_tostring (tbl);
-		r_cons_println (s);
+		r_cons_println (core->cons, s);
 		free (s);
 	}
 	r_table_free (tbl);
@@ -1365,7 +1364,7 @@ static void cmd_debug_map_heap_block_win(RCore *core, const char *input) {
 			case ' ':
 				r_table_add_rowf (tbl, "xxnnns", headerAddr, off, (ut64)hb->dwSize, granularity, (ut64)hb->extraInfo->unusedBytes, type);
 				char *s = r_table_tostring (tbl);
-				r_cons_println (s);
+				r_cons_println (core->cons, s);
 				free (s);
 				break;
 			case 'j':
@@ -1378,7 +1377,7 @@ static void cmd_debug_map_heap_block_win(RCore *core, const char *input) {
 					pj_kN (pj, "unused", hb->extraInfo->unusedBytes);
 				}
 				pj_end (pj);
-				r_cons_println (pj_string (pj));
+				r_cons_println (core->cons, pj_string (pj));
 			}
 			free (hb->extraInfo);
 			free (hb);

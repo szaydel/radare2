@@ -340,7 +340,7 @@ static bool __dumpSections(RBin *bin, const char *scnname, const char *output, c
 	return true;
 }
 
-static int rabin_do_operation(RBin *bin, const char *op, int rad, const char *output, const char *file) {
+static int rabin_do_operation(RCons *cons, RBin *bin, const char *op, int rad, const char *output, const char *file) {
 	char *arg = NULL, *ptr = NULL, *ptr2 = NULL;
 	bool rc = true;
 
@@ -442,8 +442,8 @@ static int rabin_do_operation(RBin *bin, const char *op, int rad, const char *ou
 		if (plg && plg->signature) {
 			char *sign = plg->signature (cur, rad == R_MODE_JSON);
 			if (sign) {
-				r_cons_println (sign);
-				r_cons_flush ();
+				r_cons_println (cons, sign);
+				r_cons_flush (cons);
 				free (sign);
 			}
 		}
@@ -481,7 +481,7 @@ error:
 	return false;
 }
 
-static int rabin_show_srcline(RBin *bin, ut64 at) {
+static bool rabin_show_srcline(RBin *bin, ut64 at) {
 	char *srcline;
 	if (at != UT64_MAX && (srcline = r_bin_addrline_tostring (bin, at, 1))) {
 		printf ("%s\n", srcline);
@@ -492,7 +492,7 @@ static int rabin_show_srcline(RBin *bin, ut64 at) {
 }
 
 /* bin callback */
-static int __lib_bin_cb(RLibPlugin *pl, void *user, void *data) {
+static bool __lib_bin_cb(RLibPlugin *pl, void *user, void *data) {
 	struct r_bin_plugin_t *hand = (struct r_bin_plugin_t *)data;
 	RBin *bin = user;
 	//printf(" * Added (dis)assembly plugin\n");
@@ -500,12 +500,12 @@ static int __lib_bin_cb(RLibPlugin *pl, void *user, void *data) {
 	return true;
 }
 
-static int __lib_bin_dt(RLibPlugin *pl, void *p, void *u) {
+static bool __lib_bin_dt(RLibPlugin *pl, void *p, void *u) {
 	return true;
 }
 
 /* binxtr callback */
-static int __lib_bin_xtr_cb(RLibPlugin *pl, void *user, void *data) {
+static bool __lib_bin_xtr_cb(RLibPlugin *pl, void *user, void *data) {
 	struct r_bin_xtr_plugin_t *hand = (struct r_bin_xtr_plugin_t *)data;
 	RBin *bin = user;
 	//printf(" * Added (dis)assembly plugin\n");
@@ -513,12 +513,12 @@ static int __lib_bin_xtr_cb(RLibPlugin *pl, void *user, void *data) {
 	return true;
 }
 
-static int __lib_bin_xtr_dt(RLibPlugin *pl, void *p, void *u) {
+static bool __lib_bin_xtr_dt(RLibPlugin *pl, void *p, void *u) {
 	return true;
 }
 
 /* binldr callback */
-static int __lib_bin_ldr_cb(RLibPlugin *pl, void *user, void *data) {
+static bool __lib_bin_ldr_cb(RLibPlugin *pl, void *user, void *data) {
 	struct r_bin_ldr_plugin_t *hand = (struct r_bin_ldr_plugin_t *)data;
 	RBin *bin = user;
 	//printf(" * Added (dis)assembly plugin\n");
@@ -526,7 +526,7 @@ static int __lib_bin_ldr_cb(RLibPlugin *pl, void *user, void *data) {
 	return true;
 }
 
-static int __lib_bin_ldr_dt(RLibPlugin *pl, void *p, void *u) {
+static bool __lib_bin_ldr_dt(RLibPlugin *pl, void *p, void *u) {
 	return true;
 }
 
@@ -547,10 +547,10 @@ static char *__demangleAs(RBin *bin, int type, const char *file) {
 	return res;
 }
 
-static void __listPlugins(RBin *bin, const char* plugin_name, PJ *pj, int rad) {
+static void list_plugins(RBin *bin, const char* plugin_name, PJ *pj, int rad) {
 	int format = (rad == R_MODE_JSON) ? 'j': rad? 'q': 0;
 	bin->cb_printf = (PrintfCallback)printf;
-	if (plugin_name) {
+	if (R_STR_ISNOTEMPTY (plugin_name)) {
 		r_bin_list_plugin (bin, plugin_name, pj, format);
 	} else {
 		r_bin_list (bin, pj, format);
@@ -603,6 +603,7 @@ R_API int r_main_rabin2(int argc, const char **argv) {
 
 	r_core_init (&core);
 	RBin *bin = core.bin;
+	RCons *cons = core.cons;
 
 	state.stdin_buf = malloc (STDIN_BUF_SIZE);
 	if (!state.stdin_buf) {
@@ -927,10 +928,10 @@ R_API int r_main_rabin2(int argc, const char **argv) {
 		if (opt.ind < argc) {
 			plugin_name = argv[opt.ind];
 		}
-		__listPlugins (bin, plugin_name, pj, rad);
+		list_plugins (bin, plugin_name, pj, rad);
 		if (rad == R_MODE_JSON) {
-			r_cons_println (pj_string (pj));
-			r_cons_flush ();
+			r_cons_println (cons, pj_string (pj));
+			r_cons_flush (cons);
 			pj_free (pj);
 		}
 		r_core_fini (&core);
@@ -1088,7 +1089,7 @@ R_API int r_main_rabin2(int argc, const char **argv) {
 			return waitpid (child, NULL, 0);
 		}
 #endif
-		void *addr = r_lib_dl_open (file);
+		void *addr = r_lib_dl_open (file, false);
 		if (addr) {
 			R_LOG_INFO ("%s is loaded at 0x%"PFMT64x, file, (ut64)(size_t)(addr));
 			r_lib_dl_close (addr);
@@ -1187,7 +1188,7 @@ R_API int r_main_rabin2(int argc, const char **argv) {
 	if (query) {
 		if (rad) {
 			r_core_bin_export_info (&core, R_MODE_RADARE);
-			r_cons_flush ();
+			r_cons_flush (cons);
 		} else {
 			if (!strcmp (query, "-")) {
 				__sdb_prompt (&state, bin->cur->sdb);
@@ -1208,7 +1209,7 @@ R_API int r_main_rabin2(int argc, const char **argv) {
 	}\
 }
 	core.bin = bin;
-	bin->cb_printf = r_cons_printf;
+	bin->cb_printf = r_cons_gprintf; // XXX deprecate
 	filter.addr = at;
 	filter.name = name;
 	core.cons->context->is_interactive = false;
@@ -1287,15 +1288,15 @@ R_API int r_main_rabin2(int argc, const char **argv) {
 		}
 	}
 	if (op && action & R_BIN_REQ_OPERATION) {
-		rabin_do_operation (bin, op, rad, output, file);
+		rabin_do_operation (cons, bin, op, rad, output, file);
 	}
 	if (pj) {
 		pj_end (pj);
-		r_cons_println (pj_string (pj));
+		r_cons_println (cons, pj_string (pj));
 	}
 
 	pj_free (pj);
-	r_cons_flush ();
+	r_cons_flush (cons);
 	r_core_fini (&core);
 	r_syscmd_popalld ();
 	free (state.stdin_buf);

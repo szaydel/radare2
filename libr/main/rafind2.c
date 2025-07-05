@@ -43,7 +43,7 @@ static void rafind_options_fini(RafindOptions *ro) {
 		ro->cur = 0;
 		r_list_free (ro->keywords);
 		ro->keywords = NULL;
-		r_kons_free (ro->cons);
+		r_cons_free2 (ro->cons);
 	}
 }
 
@@ -153,7 +153,7 @@ static int hit(RSearchKeyword *kw, void *user, ut64 addr) {
 			if (ro->pr) {
 				int bs = R_MIN (ro->bsize, 64);
 				r_print_hexdump (ro->pr, addr, (ut8*)buf + delta, bs, 16, 1, 1);
-				r_cons_flush ();
+				r_cons_flush (ro->cons);
 			}
 		}
 	}
@@ -249,11 +249,6 @@ static int rafind_open_file(RafindOptions *ro, const char *file, const ut8 *data
 		to = r_io_size (io);
 	}
 
-	if (!r_cons_new ()) {
-		result = 1;
-		goto err;
-	}
-
 	if (ro->mode == R_SEARCH_STRING) {
 		/* TODO: implement using api */
 		r_sys_cmdf ("rabin2 -q%szzz \"%s\"", ro->json? "j": "", efile);
@@ -334,7 +329,7 @@ static int rafind_open_file(RafindOptions *ro, const char *file, const ut8 *data
 		}
 	}
 done:
-//	r_kons_free (ro);
+//	r_cons_free2 (ro);
 err:
 	free (efile);
 	r_io_free (io);
@@ -589,7 +584,7 @@ R_API int r_main_rafind2(int argc, const char **argv) {
 			r_io_plugin_list (ro.io);
 		}
 #endif
-		r_cons_flush ();
+		r_cons_flush (ro.cons);
 		return 0;
 	}
 	if (opt.ind == argc) {

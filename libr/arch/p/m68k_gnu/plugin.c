@@ -64,7 +64,7 @@ static void memory_error_func(int status, bfd_vma memaddr, struct disassemble_in
 DECLARE_GENERIC_PRINT_ADDRESS_FUNC_NOGLOBALS()
 DECLARE_GENERIC_FPRINTF_FUNC_NOGLOBALS()
 
-static bool decode(RArchSession *as, RAnalOp *op, RAnalOpMask mask) {
+static bool decode(RArchSession *as, RAnalOp *op, RArchDecodeMask mask) {
 	const ut64 addr = op->addr;
 	const int len = op->size;
 	const ut8 *buf = op->bytes;
@@ -118,7 +118,7 @@ const RArchPlugin r_arch_plugin_m68k_gnu = {
 		.name = "m68k.gnu",
 		.author = "pancake",
 		.license = "GPL-3.0-only",
-		.desc = "Binutils 2.36 based m68k disassembler",
+		.desc = "Motorola 680x0 (binutils 2.36)",
 	},
 	.arch = "m68k",
 	.cpus = "m68000,m68010,m68020,m68030,m68040,m68060,m68881,m68851"

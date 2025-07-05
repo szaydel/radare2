@@ -94,8 +94,12 @@ static void emit_set_string(REgg *egg, const char *dstvar, const char *str, int 
 	// XXX: does not handle \n and so on.. must use r_util
 	// use r_str_escape to handle \n
 	// do not forget mem leak
-	r_egg_printf (egg, ".string \"%s\"\n", str = r_str_escape (str));
-	free ((char *) str);
+	char *s = strdup (str);
+	char *escaped = r_str_escape (s);
+	free (s);
+	s = escaped;
+	r_egg_printf (egg, ".string \"%s\"\n", s);
+	free (s);
 	if (rest) {
 		r_egg_printf (egg, ".fill %d, 1, 0\n", (rest));
 	}

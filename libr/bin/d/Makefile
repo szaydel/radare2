@@ -1,9 +1,6 @@
 include ../../../global.mk
 include ../../../config-user.mk
 
-SDBPATH=$(LTOP)/../subprojects/sdb/
-SDB=$(SDBPATH)/sdb
-
 P=${DESTDIR}${DATADIR}/radare2/${VERSION}/format
 
 DLLS=ws2_32 oleaut32 wsock32 msi csmfpapi msvbvm60 kernel32
@@ -30,7 +27,9 @@ DLLS+=win87em winaspi winnet16 winoldap winsock winspl16 wpsapd wpsuni
 DLLS+=wpsunire wsasrv
 DLL_SDB=$(addsuffix .sdb,$(addprefix dll/,$(DLLS)))
 
-all: $(DLL_SDB) symclass.sdb
+all:
+	$(SDB) -r $(shell pwd)
+	$(SDB) -r $(shell pwd)/dll
 
 clean:
 	rm -f dll/*.sdb
@@ -46,19 +45,14 @@ install: $(F_SDB)
 	mkdir -p "$P/dll"
 	cp -f dll/*.sdb "$P/dll"
 
-symclass.sdb:
-	-$(SDB) $@ = < $@.txt
-
 CWD=$(shell pwd)
-symstall install-symlink: symclass.sdb
+symstall install-symlink:
 	mkdir -p "$P"
 	rm -rf "$P/dll"
 	for FILE in *.r2 *.h dll symclass.sdb ; do \
 		[ ! -d "$P/$$FILE" ] && ln -fs "${CWD}/$$FILE" "$P/$$FILE" ; \
 	done
 
-$(DLL_SDB):
-	-$(SDB) $@ = < $@.txt
 
 uninstall:
 	rm -rf "$P"

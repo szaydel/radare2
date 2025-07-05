@@ -6,45 +6,19 @@ else
   if get_option('capstone_in_builddir')
     capstone_path = join_paths(meson.current_build_dir(), 'capstone')
   else
-    capstone_path = join_paths(meson.source_root(), 'subprojects/capstone-' + capstone_version)
+    capstone_path = join_paths(meson.project_source_root(), 'subprojects/capstone-' + capstone_version)
   endif
 
   message('capstone path:' + capstone_path)
   capstone_version = get_option('use_capstone_version')
   message('Use bundled capstone: ' + capstone_version)
 
-  patches_files = []
-  if capstone_version == 'next'
-    cs = subproject('capstone-next')
-    patches_files = [
-      'fix-x86-16.patch',
-    ]
-  elif capstone_version == 'v5'
-    cs = subproject('capstone-v5')
-    patches_files = [
-      'fix-x86-16.patch'
-    ]
-  elif capstone_version == 'v4'
-    cs = subproject('capstone-v4')
-    patches_files = [
-      'capstone-calloc.patch',
-      'fix-x86-16.patch',
-      'sparc-crash.patch',
-      'sstream-null.patch'
-    ]
+  fs = import('fs')
+  if fs.is_file('../subprojects/capstone-' + capstone_version + '.wrap')
+    cs = subproject('capstone-' + capstone_version)
   else
     error('Wrong capstone version selected. Please use one of the supported versions.')
   endif
-
-  message('Patching capstone with radare\'s patches')
-  foreach file : patches_files
-    patch_path = join_paths(meson.current_source_dir(), 'capstone-patches', file)
-    patch_cmd_str = '-C @0@ apply -p1 @1@'.format(capstone_path, patch_path)
-    patch_cmd = run_command(git_exe, patch_cmd_str.split())
-    if patch_cmd.returncode() != 0
-      warning('Cannot apply patch ' + file)
-    endif
-  endforeach
 
   capstone_dep = cs.get_variable('capstone_dep')
 endif
@@ -241,7 +215,7 @@ winkd_files = [
 winkd_inc = [platform_inc, include_directories('winkd')]
 
 libr2winkd = static_library('r2winkd', winkd_files,
-  dependencies: [r_crypto_dep, r_socket_dep, r_util_dep],
+  dependencies: [r_muta_dep, r_socket_dep, r_util_dep],
   include_directories: winkd_inc,
   implicit_include_directories: false
 )
@@ -253,7 +227,7 @@ winkd_dep = declare_dependency(
 
 if get_option('blob')
 libr2winkd_static = static_library('r2winkd_static', winkd_files,
-  dependencies: [r_crypto_static_dep, r_socket_static_dep, r_util_static_dep],
+  dependencies: [r_muta_static_dep, r_socket_static_dep, r_util_static_dep],
   include_directories: winkd_inc,
   implicit_include_directories: false
 )
